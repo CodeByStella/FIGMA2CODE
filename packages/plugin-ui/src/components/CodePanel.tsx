@@ -172,6 +172,7 @@ const CodePanel = (props: CodePanelProps) => {
                 // Regular toggle buttons for other options
                 return (
                   <FrameworkTabs
+                    key={preference.propertyName}
                     options={preference.options}
                     selectedValue={
                       (settings?.[preference.propertyName] ??

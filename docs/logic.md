@@ -1,6 +1,6 @@
 # Logic
 
-How Figma to Code turns a Figma selection into framework-specific source. This document describes the runtime pipeline, packages, and messaging — not end-user steps (see [User Guide](./user-guide.md)).
+How Figma to Code turns a Figma selection into framework-specific source. This document describes the runtime pipeline, packages, and messaging — not setup steps (see [Developer Guide](./user-guide.md)).
 
 ---
 
