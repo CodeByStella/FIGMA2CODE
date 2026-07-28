@@ -1,7 +1,10 @@
 {
-  "extends": "tsconfig/base.json",
+  "extends": "../../packages/tsconfig/base.json",
   "compilerOptions": {
     "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "ignoreDeprecations": "6.0",
     "jsx": "react-jsx",
     "typeRoots": ["node_modules/@types", "node_modules/@figma"]
   }
