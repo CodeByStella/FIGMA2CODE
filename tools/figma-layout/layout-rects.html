@@ -243,7 +243,7 @@
           .join("");
 
         document.getElementById("meta").textContent =
-          `${items.length} rects · ${Math.round(maxX - minX)}×${Math.round(maxY - minY)} · click to copy id`;
+          `${items.length} rects · ${Math.round(maxX - minX)}×${Math.round(maxY - minY)} · hover shows type + id · click copies id`;
 
         const tip = document.getElementById("tooltip");
 
@@ -269,8 +269,12 @@
           };
         }
 
-        function placeTip(e, hit) {
-          tip.textContent = hit.id;
+        function tipLabel(hit) {
+          return hit.type ? `${hit.type}\n${hit.id}` : hit.id;
+        }
+
+        function placeTip(e, hit, text = tipLabel(hit)) {
+          tip.textContent = text;
           tip.style.display = "block";
           tip.style.left = "0px";
           tip.style.top = "0px";
@@ -342,13 +346,9 @@
           if (!hit || !hit.id || hit.id === "(no id)") return;
           try {
             await navigator.clipboard.writeText(hit.id);
-            tip.textContent = `copied: ${hit.id}`;
-            tip.style.display = "block";
-            placeTip(e, hit);
+            placeTip(e, hit, `copied:\n${tipLabel(hit)}`);
           } catch {
-            tip.textContent = `copy failed: ${hit.id}`;
-            tip.style.display = "block";
-            placeTip(e, hit);
+            placeTip(e, hit, `copy failed:\n${tipLabel(hit)}`);
           }
         });
       }

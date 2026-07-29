@@ -10,9 +10,11 @@
  *   open http://localhost:8765/layout-rects.html
  */
 
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "data");
 
 const INPUT = path.resolve(
@@ -23,7 +25,7 @@ const OUTPUT = path.resolve(
 );
 
 /** Keep node identity so the tree stays readable */
-const IDENTITY_KEYS = new Set(["id", "children"]);
+const IDENTITY_KEYS = new Set(["id", "type", "children"]);
 
 /** Geometry, bounds, and auto-layout / constraint fields */
 const LAYOUT_KEYS = new Set([

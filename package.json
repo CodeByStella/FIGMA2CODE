@@ -11,7 +11,8 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,css,md,json}\"",
     "prepare": "husky",
     "layout:filter": "pnpm --dir tools/figma-layout filter",
-    "layout:html": "pnpm --dir tools/figma-layout html"
+    "layout:html": "pnpm --dir tools/figma-layout html",
+    "layout:serve": "pnpm --dir tools/figma-layout serve"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,css,md,json}": [

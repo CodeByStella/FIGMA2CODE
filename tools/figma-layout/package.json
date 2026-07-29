@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "filter": "node filter-layout.js",
-    "html": "tsx json-to-html.ts"
+    "html": "tsx json-to-html.ts",
+    "serve": "python -m http.server 8765 --directory ."
   },
   "dependencies": {
     "@figma/plugin-typings": "^1.125.0",

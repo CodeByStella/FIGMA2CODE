@@ -74,7 +74,7 @@ Supported root shapes:
 
 ## 2. Filter to layout-only JSON
 
-Keeps identity + geometry / auto-layout fields. Drops fills, text, effects, etc.
+Keeps `id`, `type`, children, and geometry / auto-layout fields. Drops fills, text, effects, etc.
 
 ```bash
 # from repo root
@@ -97,17 +97,17 @@ Default: `data/figma_raw.json` → `data/figma_layout.json`.
 
 | Action | Behavior                                                       |
 | ------ | -------------------------------------------------------------- |
-| Hover  | Yellow highlight + tooltip with `id`                           |
+| Hover  | Yellow highlight + tooltip with `type` and `id`                |
 | Click  | Copies `id` to clipboard; rect flashes red while mouse is down |
 
 Serve this folder (`file://` cannot `fetch` JSON):
 
 ```bash
 # from repo root
-python -m http.server 8765 --directory tools/figma-layout
+pnpm layout:serve
 
 # from this directory
-python -m http.server 8765 --directory .
+pnpm serve
 ```
 
 Open: [http://localhost:8765/layout-rects.html](http://localhost:8765/layout-rects.html)
@@ -153,5 +153,7 @@ Pipeline (all local):
 | ------------ | -------------------- | -------------------------------------- |
 | This package | `pnpm filter`        | `node filter-layout.js`                |
 | This package | `pnpm html`          | `tsx json-to-html.ts`                  |
+| This package | `pnpm serve`         | static server on `:8765`               |
 | Repo root    | `pnpm layout:filter` | `pnpm --dir tools/figma-layout filter` |
 | Repo root    | `pnpm layout:html`   | `pnpm --dir tools/figma-layout html`   |
+| Repo root    | `pnpm layout:serve`  | `pnpm --dir tools/figma-layout serve`  |
