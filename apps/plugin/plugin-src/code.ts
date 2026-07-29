@@ -131,6 +131,59 @@ const safeRun = async (settings: PluginSettings) => {
   }
 };
 
+const exportSelectionJson = async (nodes: readonly SceneNode[]) => {
+  if (nodes.length === 0) {
+    return { message: "No nodes selected" as const };
+  }
+
+  const result: {
+    json?: SceneNode[];
+    oldConversion?: any;
+    newConversion?: any;
+  } = {};
+
+  try {
+    result.json = (await Promise.all(
+      nodes.map(
+        async (node) =>
+          (
+            (await node.exportAsync({
+              format: "JSON_REST_V1",
+            })) as any
+          ).document,
+      ),
+    )) as SceneNode[];
+  } catch (error) {
+    console.error("Error exporting JSON:", error);
+  }
+
+  try {
+    const newNodes = await nodesToJSON(nodes, userPluginSettings);
+    const removeParent = (node: any) => {
+      if (node.parent) {
+        delete node.parent;
+      }
+      if (node.children) {
+        node.children.forEach(removeParent);
+      }
+    };
+    newNodes.forEach(removeParent);
+    result.newConversion = newNodes;
+  } catch (error) {
+    console.error("Error in new conversion:", error);
+  }
+
+  return result;
+};
+
+const logSelectionJson = async () => {
+  const nodes = figma.currentPage.selection;
+  console.log("[DEBUG] selection JSON export - selection count:", nodes.length);
+  const data = await exportSelectionJson(nodes);
+  console.log("[selection-json]", JSON.stringify(data, null, 2));
+  return data;
+};
+
 const standardMode = async () => {
   console.log("[DEBUG] standardMode - Starting standard mode initialization");
   figma.showUI(__html__, { width: 450, height: 700, themeColors: true });
@@ -149,6 +202,7 @@ const standardMode = async () => {
       "[DEBUG] selectionchange event - New selection count:",
       figma.currentPage.selection.length,
     );
+    void logSelectionJson();
     safeRun(userPluginSettings);
   });
 
@@ -180,58 +234,15 @@ const standardMode = async () => {
     } else if (msg.type === "get-selection-json") {
       console.log("[DEBUG] get-selection-json message received");
 
-      const nodes = figma.currentPage.selection;
-      if (nodes.length === 0) {
-        figma.ui.postMessage({
-          type: "selection-json",
-          data: { message: "No nodes selected" },
-        });
-        return;
-      }
-      const result: {
-        json?: SceneNode[];
-        oldConversion?: any;
-        newConversion?: any;
-      } = {};
-
-      try {
-        result.json = (await Promise.all(
-          nodes.map(
-            async (node) =>
-              (
-                (await node.exportAsync({
-                  format: "JSON_REST_V1",
-                })) as any
-              ).document,
-          ),
-        )) as SceneNode[];
-      } catch (error) {
-        console.error("Error exporting JSON:", error);
-      }
-
-      try {
-        const newNodes = await nodesToJSON(nodes, userPluginSettings);
-        const removeParent = (node: any) => {
-          if (node.parent) {
-            delete node.parent;
-          }
-          if (node.children) {
-            node.children.forEach(removeParent);
-          }
-        };
-        newNodes.forEach(removeParent);
-        result.newConversion = newNodes;
-      } catch (error) {
-        console.error("Error in new conversion:", error);
-      }
-
-      const nodeJson = result;
+      const nodeJson = await exportSelectionJson(figma.currentPage.selection);
 
       console.log(
         "[DEBUG] Exported node JSON:",
-        `jsonCount=${result.json?.length ?? 0}`,
-        `newConversionCount=${result.newConversion?.length ?? 0}`,
+        "json" in nodeJson
+          ? `jsonCount=${nodeJson.json?.length ?? 0}, newConversionCount=${nodeJson.newConversion?.length ?? 0}`
+          : nodeJson.message,
       );
+      console.log("[selection-json]", JSON.stringify(nodeJson, null, 2));
 
       // Send the JSON data back to the UI
       figma.ui.postMessage({

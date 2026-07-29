@@ -9,7 +9,9 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,css,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,css,md,json}\"",
-    "prepare": "husky"
+    "prepare": "husky",
+    "layout:filter": "pnpm --dir tools/figma-layout filter",
+    "layout:html": "pnpm --dir tools/figma-layout html"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,css,md,json}": [
@@ -17,11 +19,13 @@
     ]
   },
   "devDependencies": {
+    "@types/node": "^25.7.0",
     "eslint": "^10.3.0",
     "eslint-config-custom": "workspace:*",
     "husky": "^9.1.7",
     "lint-staged": "^17.2.0",
     "prettier": "^3.8.3",
+    "tsx": "^4.23.1",
     "turbo": "^2.9.12",
     "typescript": "^6.0.3"
   }

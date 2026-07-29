@@ -229,6 +229,7 @@ FigmaToCode/
 ├── packages/types/            # Shared TS types / messages
 ├── packages/tsconfig/
 ├── packages/eslint-config-custom/
+├── tools/figma-layout/        # Layout filter, rect viewer, JSON→HTML (reuses backend)
 └── docs/
 ```
 

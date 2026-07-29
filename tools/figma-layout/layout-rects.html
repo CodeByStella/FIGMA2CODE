@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Figma layout rects</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #111;
+        color: #eee;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 14px;
+        background: #1a1a1a;
+        border-bottom: 1px solid #333;
+      }
+      header code {
+        color: #8cf;
+      }
+      #meta {
+        opacity: 0.75;
+        font-size: 13px;
+      }
+      #wrap {
+        overflow: auto;
+        height: calc(100vh - 52px);
+        background: #0d0d0d;
+      }
+      canvas {
+        display: block;
+        margin: 16px;
+        background: #181818;
+        box-shadow: 0 0 0 1px #333;
+        cursor: crosshair;
+      }
+      #tooltip {
+        position: fixed;
+        z-index: 10;
+        display: none;
+        pointer-events: none;
+        max-width: 360px;
+        padding: 6px 8px;
+        font-size: 12px;
+        font-family: ui-monospace, Consolas, monospace;
+        color: #fff;
+        background: rgba(20, 20, 20, 0.92);
+        border: 1px solid #555;
+        border-radius: 6px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .swatch {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        margin-right: 8px;
+      }
+      .swatch i {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>Layout rects</strong>
+      <span id="meta">Loading…</span>
+      <div id="legend"></div>
+    </header>
+    <div id="wrap">
+      <canvas id="c"></canvas>
+    </div>
+    <div id="tooltip" role="tooltip"></div>
+    <script>
+      // Serve this folder over HTTP so fetch works, e.g.:
+      //   python -m http.server 8765 --directory tools/figma-layout
+      // then open http://localhost:8765/layout-rects.html
+
+      const TYPE_COLORS = {
+        FRAME: "#3b82f6",
+        GROUP: "#8b5cf6",
+        COMPONENT: "#22c55e",
+        INSTANCE: "#14b8a6",
+        COMPONENT_SET: "#84cc16",
+        TEXT: "#f59e0b",
+        RECTANGLE: "#ef4444",
+        ELLIPSE: "#ec4899",
+        VECTOR: "#a855f7",
+        LINE: "#64748b",
+        BOOLEAN_OPERATION: "#06b6d4",
+        SECTION: "#0ea5e9",
+        SLOT: "#f97316",
+        IMAGE: "#e11d48",
+      };
+
+      const FALLBACK = "#94a3b8";
+
+      function colorFor(node) {
+        const base = TYPE_COLORS[node.type] || FALLBACK;
+        let h = 0;
+        const id = node.id || node.name || "";
+        for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+        const mix = (h % 40) - 20;
+        return shadeRgb(base, mix);
+      }
+
+      function shadeRgb(hex, delta) {
+        const n = parseInt(hex.slice(1), 16);
+        const clamp = (v) => Math.max(0, Math.min(255, v + delta));
+        return {
+          r: clamp((n >> 16) & 255),
+          g: clamp((n >> 8) & 255),
+          b: clamp(n & 255),
+        };
+      }
+
+      function collect(node, list = []) {
+        if (!node || typeof node !== "object") return list;
+        const box = node.absoluteBoundingBox;
+        if (box && box.width >= 0 && box.height >= 0) {
+          list.push({ node, box });
+        }
+        if (Array.isArray(node.children)) {
+          for (const child of node.children) collect(child, list);
+        }
+        return list;
+      }
+
+      async function main() {
+        const res = await fetch(`./data/figma_layout.json?t=${Date.now()}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`Failed to load figma_layout.json (${res.status})`);
+        const root = await res.json();
+        const items = collect(root);
+
+        let minX = Infinity,
+          minY = Infinity,
+          maxX = -Infinity,
+          maxY = -Infinity;
+        for (const { box } of items) {
+          minX = Math.min(minX, box.x);
+          minY = Math.min(minY, box.y);
+          maxX = Math.max(maxX, box.x + box.width);
+          maxY = Math.max(maxY, box.y + box.height);
+        }
+        if (!Number.isFinite(minX)) {
+          document.getElementById("meta").textContent = "No bounding boxes found.";
+          return;
+        }
+
+        const pad = 8;
+        const w = Math.ceil(maxX - minX + pad * 2);
+        const h = Math.ceil(maxY - minY + pad * 2);
+        const canvas = document.getElementById("c");
+        const ctx = canvas.getContext("2d");
+        const scale = Math.min(1, 2400 / Math.max(w, 1));
+        canvas.width = Math.ceil(w * scale);
+        canvas.height = Math.ceil(h * scale);
+
+        items.sort((a, b) => b.box.width * b.box.height - a.box.width * a.box.height);
+
+        const drawList = items.map(({ node, box }) => ({
+          id: node.id || "(no id)",
+          type: node.type || "",
+          x: box.x - minX + pad,
+          y: box.y - minY + pad,
+          w: box.width,
+          h: box.height,
+          area: box.width * box.height,
+          color: colorFor(node),
+        }));
+        // Smallest first so nested nodes win on hover
+        const hitOrder = [...drawList].sort((a, b) => a.area - b.area);
+
+        let hovered = null;
+        let pressed = null; // red only while mouse button is down on a rect
+
+        function sameRect(a, b) {
+          return (
+            a &&
+            b &&
+            a.id === b.id &&
+            a.x === b.x &&
+            a.y === b.y &&
+            a.w === b.w &&
+            a.h === b.h
+          );
+        }
+
+        function draw() {
+          ctx.setTransform(scale, 0, 0, scale, 0, 0);
+          ctx.fillStyle = "#181818";
+          ctx.fillRect(0, 0, w, h);
+
+          for (const r of drawList) {
+            const isPressed = sameRect(pressed, r);
+            const isHover = sameRect(hovered, r);
+            const { r: cr, g: cg, b: cb } = r.color;
+
+            if (isPressed) {
+              ctx.fillStyle = `rgba(220, 40, 40, 0.5)`;
+              ctx.strokeStyle = `#e11d48`;
+              ctx.lineWidth = 2.5 / scale;
+            } else if (isHover) {
+              ctx.fillStyle = `rgba(255, 255, 80, 0.45)`;
+              ctx.strokeStyle = `#ffe566`;
+              ctx.lineWidth = 2.5 / scale;
+            } else {
+              ctx.fillStyle = `rgba(${cr},${cg},${cb},0.18)`;
+              ctx.strokeStyle = `rgb(${cr},${cg},${cb})`;
+              ctx.lineWidth = 1 / scale;
+            }
+            ctx.fillRect(r.x, r.y, r.w, r.h);
+            ctx.strokeRect(r.x, r.y, r.w, r.h);
+          }
+        }
+
+        draw();
+
+        const types = [...new Set(items.map((i) => i.node.type))].sort();
+        document.getElementById("legend").innerHTML = types
+          .map(
+            (t) =>
+              `<span class="swatch"><i style="background:${TYPE_COLORS[t] || FALLBACK}"></i>${t}</span>`,
+          )
+          .join("");
+
+        document.getElementById("meta").textContent =
+          `${items.length} rects · ${Math.round(maxX - minX)}×${Math.round(maxY - minY)} · click to copy id`;
+
+        const tip = document.getElementById("tooltip");
+
+        function hitTest(layoutX, layoutY) {
+          for (const r of hitOrder) {
+            if (
+              layoutX >= r.x &&
+              layoutY >= r.y &&
+              layoutX <= r.x + r.w &&
+              layoutY <= r.y + r.h
+            ) {
+              return r;
+            }
+          }
+          return null;
+        }
+
+        function pointerLayout(e) {
+          const rect = canvas.getBoundingClientRect();
+          return {
+            layoutX: (e.clientX - rect.left) / scale,
+            layoutY: (e.clientY - rect.top) / scale,
+          };
+        }
+
+        function placeTip(e, hit) {
+          tip.textContent = hit.id;
+          tip.style.display = "block";
+          tip.style.left = "0px";
+          tip.style.top = "0px";
+          const tw = tip.offsetWidth;
+          const th = tip.offsetHeight;
+          let left = e.clientX + 14;
+          let top = e.clientY + 18;
+          if (left + tw > window.innerWidth - 8) left = e.clientX - tw - 8;
+          if (top + th > window.innerHeight - 8) top = e.clientY - th - 8;
+          tip.style.left = `${left}px`;
+          tip.style.top = `${top}px`;
+        }
+
+        canvas.addEventListener("mousemove", (e) => {
+          const { layoutX, layoutY } = pointerLayout(e);
+          const hit = hitTest(layoutX, layoutY);
+          const same =
+            (!hit && !hovered) ||
+            (hit &&
+              hovered &&
+              hit.id === hovered.id &&
+              hit.x === hovered.x &&
+              hit.y === hovered.y);
+
+          if (!hit) {
+            if (hovered) {
+              hovered = null;
+              draw();
+            }
+            tip.style.display = "none";
+            return;
+          }
+
+          if (!same) {
+            hovered = hit;
+            draw();
+          }
+          placeTip(e, hit);
+        });
+
+        canvas.addEventListener("mousedown", (e) => {
+          if (e.button !== 0) return;
+          const { layoutX, layoutY } = pointerLayout(e);
+          const hit = hitTest(layoutX, layoutY);
+          if (!hit) return;
+          pressed = hit;
+          draw();
+        });
+
+        function clearPressed() {
+          if (!pressed) return;
+          pressed = null;
+          draw();
+        }
+
+        window.addEventListener("mouseup", clearPressed);
+        canvas.addEventListener("mouseleave", () => {
+          clearPressed();
+          if (hovered) {
+            hovered = null;
+            draw();
+          }
+          tip.style.display = "none";
+        });
+
+        canvas.addEventListener("click", async (e) => {
+          const { layoutX, layoutY } = pointerLayout(e);
+          const hit = hitTest(layoutX, layoutY);
+          if (!hit || !hit.id || hit.id === "(no id)") return;
+          try {
+            await navigator.clipboard.writeText(hit.id);
+            tip.textContent = `copied: ${hit.id}`;
+            tip.style.display = "block";
+            placeTip(e, hit);
+          } catch {
+            tip.textContent = `copy failed: ${hit.id}`;
+            tip.style.display = "block";
+            placeTip(e, hit);
+          }
+        });
+      }
+
+      main().catch((err) => {
+        document.getElementById("meta").textContent = String(err.message || err);
+        console.error(err);
+      });
+    </script>
+  </body>
+</html>

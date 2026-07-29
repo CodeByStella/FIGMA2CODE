@@ -1,0 +1,4 @@
+# Large / generated dumps — keep local
+*.json
+*.html
+!.gitkeep

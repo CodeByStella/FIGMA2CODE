@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
+    "types": ["node", "@figma/plugin-typings"],
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "paths": {
+      "types": ["./types/src/index.ts"]
+    }
+  },
+  "include": ["./**/*.ts"]
+}
