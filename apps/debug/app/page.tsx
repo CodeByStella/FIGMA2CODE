@@ -10,7 +10,7 @@ export default function Web() {
   const testWarnings = ["This is an example of a conversion warning message."];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-8">
+    <div className="min-h-screen bg-linear-to-br from-gray-50 to-gray-100 p-8">
       <header className="mb-10">
         <h1 className="text-5xl font-bold text-gray-900 tracking-tight">
           Debug Mode
@@ -18,12 +18,12 @@ export default function Web() {
         <p className="text-gray-600 mt-2">
           Preview your Figma to Code plugin in both light and dark modes
         </p>
-        <div className="h-0.5 bg-gradient-to-r from-blue-500 to-purple-500 mt-6"></div>
+        <div className="h-0.5 bg-linear-to-r from-blue-500 to-purple-500 mt-6"></div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="flex flex-col">
-          <div className="bg-gradient-to-br from-white to-gray-50 p-6 rounded-xl shadow-xl border border-gray-100">
+          <div className="bg-linear-to-br from-white to-gray-50 p-6 rounded-xl shadow-xl border border-gray-100">
             <h2 className="text-2xl font-semibold mb-4 text-gray-800">
               Light Mode
             </h2>

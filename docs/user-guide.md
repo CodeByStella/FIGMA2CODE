@@ -100,6 +100,42 @@ You only re-import if the manifest path changes or Figma “forgets” the link.
 
 ---
 
+## Runtime debug console
+
+Yes. There are **two** consoles (main thread ≠ UI).
+
+### 1. Main thread (`code.js` / `packages/backend`)
+
+Logs from `console.log` in `plugin-src` and `backend` (conversion, benchmarks, settings).
+
+1. Figma Desktop, design file open
+2. Top-left menu → **Plugins → Development → Open Console…**  
+   (shortcut often **Ctrl+Alt+I** on Windows / **⌥⌘I** on Mac)
+3. Use the **Console** tab in that window
+
+Optional: **Plugins → Development → Use Developer VM** — better for breakpoints / `debugger;`.
+
+This repo already logs a lot there (`[DEBUG]`, `[benchmark]`, …). Re-run the plugin after rebuilds to see new output.
+
+**Wrong place:** F12 on the Figma app shows Figma’s own logs, not your plugin sandbox.
+
+### 2. UI iframe (`index.html` / `plugin-ui`)
+
+Logs from React UI code.
+
+1. Run the plugin so the panel is open
+2. **Right-click inside the plugin panel** → **Inspect** / **Inspect Element**
+3. DevTools → **Console**
+
+### Tips
+
+- `packages/backend` → main console
+- `packages/plugin-ui` / `ui-src` → UI Inspect console
+- After `dist` rebuilds, **re-run** the plugin or you still see old code/logs
+- `localhost:3000` uses the browser’s normal DevTools (not Figma’s plugin console)
+
+---
+
 ## When I change code, does it auto-build and reload in Figma?
 
 ### Auto-build to `dist`?
