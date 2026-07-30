@@ -247,9 +247,10 @@ What it looks for (default threshold **4px** for designer pixel slop):
 - **Gap / padding** — from consecutive spacing and insets from the parent edges.
 - **Main-axis align** — start, or space-between when end insets are ~0 and gaps match.
 - **Overlaps** — smaller / vector layers on top of a larger one become `position: absolute` decorations; the rest can still flex.
+- **Page sections** — tall artboards stack full-width frames top→bottom in **DOM order**, with spacers for uneven gaps; hero groups that overflow above the frame get top padding and stay absolute decorations (early in the markup).
 - **Safety** — if packing the inferred flex would drift more than the threshold from the original boxes, that parent is reverted.
 
-Absolute CSS remains for decorations and for parents that cannot be inferred confidently.
+`GROUP` layers are kept as wrappers (not flattened into the parent), so hero sections stay one unit instead of thousands of absolute siblings.
 
 ### 5) Walk layers and emit HTML
 

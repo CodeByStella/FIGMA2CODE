@@ -22,6 +22,7 @@ import {
   simulateFlexPositions,
   passesFidelity,
 } from "./layoutFidelity";
+import { inferPageSectionStack } from "./pageSections";
 
 export type InferSemanticLayoutOptions = LayoutInferenceOptions & {
   /** When false, no-op. Default true. */
@@ -54,6 +55,8 @@ export function inferSemanticLayout(
 
   for (const root of list) {
     inferNode(root, { thresholdPx, overlapRatio, tinyAreaRatio });
+    // Artboard / page: stack sections in visual Y order with gaps + overflow pad
+    inferPageSectionStack(root, thresholdPx);
   }
 
   return list;

@@ -222,5 +222,82 @@ console.log("inferSemanticLayout tests");
   assert(out.layoutMode === "HORIZONTAL", "adapted tree → HORIZONTAL");
 }
 
+{
+  console.log("\n9) page sections: preserve group + vertical stack by Y");
+  const raw = {
+    id: "page",
+    name: "Page",
+    type: "FRAME",
+    visible: true,
+    absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 2000 },
+    children: [
+      {
+        id: "hero",
+        name: "HeroGroup",
+        type: "GROUP",
+        visible: true,
+        absoluteBoundingBox: { x: 100, y: -50, width: 1000, height: 800 },
+        children: [
+          {
+            id: "hero-child",
+            name: "dot",
+            type: "RECTANGLE",
+            visible: true,
+            absoluteBoundingBox: { x: 100, y: -50, width: 40, height: 40 },
+          },
+        ],
+      },
+      {
+        id: "nav",
+        name: "Nav",
+        type: "FRAME",
+        visible: true,
+        absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 80 },
+        children: [],
+      },
+      {
+        id: "s1",
+        name: "Section1",
+        type: "FRAME",
+        visible: true,
+        absoluteBoundingBox: { x: 0, y: 900, width: 1440, height: 400 },
+        children: [],
+      },
+      {
+        id: "s2",
+        name: "Section2",
+        type: "FRAME",
+        visible: true,
+        absoluteBoundingBox: { x: 0, y: 1400, width: 1440, height: 400 },
+        children: [],
+      },
+    ],
+  };
+  const adapted = adaptRestJsonToAltNodes(raw as any);
+  assert(
+    adapted[0].children.length === 4,
+    "GROUP preserved (4 kids, not flattened)",
+  );
+  const out = inferSemanticLayout(adapted, { thresholdPx: 4 })[0];
+  assert(
+    out.layoutMode === "VERTICAL",
+    `page VERTICAL (got ${out.layoutMode})`,
+  );
+  assert(
+    out.children[0]?.name === "HeroGroup" ||
+      out.children[0]?.layoutPositioning === "ABSOLUTE",
+    "hero early in DOM / absolute decoration",
+  );
+  const names = out.children.map((c: any) => c.name);
+  const navIdx = names.indexOf("Nav");
+  const s1Idx = names.indexOf("Section1");
+  const s2Idx = names.indexOf("Section2");
+  assert(
+    navIdx >= 0 && s1Idx > navIdx && s2Idx > s1Idx,
+    "sections ordered Nav → S1 → S2",
+  );
+  assert(out.paddingTop > 0, `overflow paddingTop (got ${out.paddingTop})`);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
