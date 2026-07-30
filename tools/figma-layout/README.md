@@ -131,9 +131,132 @@ pnpm html -- data/figma_raw.json data/from-figma.html
 
 Default: `data/figma_raw.json` → `data/from-figma.html`.
 
-Pipeline (all local):
+Use **raw** JSON here (fills, text, effects). `figma_layout.json` is for the rect viewer only.
 
-`json-to-html.ts` → `lib/html/htmlFromRestJson.ts` → `lib/altNodes/adaptRestJson.ts` → `lib/html/htmlMain.ts`
+### End-to-end flow
+
+```mermaid
+flowchart TD
+  A["data/figma_raw.json"] --> B["json-to-html.ts"]
+  B --> C["unwrapRoot()"]
+  C --> D["htmlFromRestJson()"]
+  D --> E["ensureFigmaOfflineStub()"]
+  D --> F["adaptRestJsonToAltNodes()"]
+  F --> G["AltNode-like tree"]
+  G --> H["htmlMain()"]
+  H --> I["htmlWidgetGenerator()"]
+  I --> J["convertNode() per node"]
+  J --> K["Builders → HTML + CSS"]
+  K --> L["Wrap full document"]
+  L --> M["data/from-figma.html"]
+```
+
+| Step  | File                                                                    | Role                                                                    |
+| ----- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| CLI   | `json-to-html.ts`                                                       | Read JSON, unwrap root, write HTML file                                 |
+| Entry | `lib/html/htmlFromRestJson.ts`                                          | Offline settings + stub `figma`; call adapt → `htmlMain`; wrap `<html>` |
+| Adapt | `lib/altNodes/adaptRestJson.ts`                                         | REST JSON → shape builders expect                                       |
+| Emit  | `lib/html/htmlMain.ts`                                                  | Walk tree, dispatch by `type`, emit markup                              |
+| Build | `lib/html/htmlDefaultBuilder.ts`, `htmlTextBuilder.ts`, `builderImpl/*` | Position, size, fills, text, auto-layout CSS                            |
+
+### 1) CLI unwrap (`json-to-html.ts`)
+
+Normalizes different dump shapes to a single node tree:
+
+```text
+{ document: Node }                    → document
+{ nodes: { id: { document: Node } } } → first document
+Node                                  → as-is
+```
+
+Then calls `htmlFromRestJson(root, { fullDocument: true, htmlGenerationMode: "html" })`.
+
+### 2) Offline gate (`htmlFromRestJson`)
+
+```mermaid
+flowchart LR
+  A["root JSON"] --> B["Stub globalThis.figma"]
+  B --> C["Force offline settings"]
+  C --> D["adaptRestJsonToAltNodes"]
+  D --> E{"nodes?"}
+  E -->|empty| F["empty HTML doc"]
+  E -->|ok| G["htmlMain"]
+  G --> H["Inject style + body"]
+```
+
+Forced off (even if options try to enable them): `embedImages`, `embedVectors`, `useColorVariables` — those need live Figma / REST image APIs.
+
+### 3) Adapt REST → AltNode (`adaptRestJson`)
+
+Walks the JSON tree depth-first and mutates a clone into something close to the plugin’s AltNode:
+
+```mermaid
+flowchart TD
+  N["JSON node"] --> V{"visible / has id?"}
+  V -->|no| X["drop"]
+  V -->|yes| T{"type?"}
+  T -->|empty FRAME/INSTANCE/…| R["type → RECTANGLE"]
+  T -->|GROUP| G["inline children into parent"]
+  T -->|TEXT| S["applyTextFromRestStyle"]
+  T -->|other| P["geometry + defaults"]
+  R --> P
+  S --> P
+  P --> C["set x/y/w/h from absoluteBoundingBox vs parent"]
+  C --> D["defaults: layoutMode, sizing, padding…"]
+  D --> Kids["recurse children"]
+  Kids --> Rel{"layoutMode NONE or absolute kids?"}
+  Rel -->|yes| Abs["isRelative = true"]
+  Rel -->|no| Keep["keep auto-layout"]
+```
+
+Important adaptations:
+
+- **Rotation**: radians → degrees (sign flipped for CSS).
+- **GROUP**: children promoted; group wrapper often disappears.
+- **Bounds**: child `x`/`y` become relative to parent’s `absoluteBoundingBox`.
+- **TEXT**: builds a single `styledTextSegments` entry from `characters` + `style` (no live `getStyledTextSegments`).
+- **Auto Layout defaults**: missing `layoutMode` → `"NONE"`; sizing/padding filled in so builders don’t crash.
+- **`canBeFlattened`**: always `false` offline (no SVG export).
+
+### 4) Emit HTML (`htmlMain` → `convertNode`)
+
+```mermaid
+flowchart TD
+  Roots["Adapted roots"] --> W["htmlWidgetGenerator"]
+  W --> Vis["getVisibleNodes"]
+  Vis --> CN["convertNode"]
+  CN --> Type{"node.type"}
+  Type -->|RECTANGLE / ELLIPSE| Cont["htmlContainer"]
+  Type -->|GROUP| Grp["htmlGroup → children"]
+  Type -->|FRAME / COMPONENT / INSTANCE / …| Fr["htmlFrame"]
+  Type -->|TEXT| Txt["htmlText / HtmlTextBuilder"]
+  Type -->|LINE| Ln["htmlLine"]
+  Type -->|VECTOR| Vec["warn + fake RECTANGLE box"]
+  Type -->|other| Warn["warning, skip"]
+  Fr --> AL{"layoutMode ≠ NONE?"}
+  AL -->|yes| Flex["htmlAutoLayoutProps → flex CSS"]
+  AL -->|no| Abs["relative parent + absolute children"]
+  Flex --> Cont
+  Abs --> Cont
+  Cont --> B["HtmlDefaultBuilder"]
+  B --> Out["div / p + inline or collected CSS"]
+```
+
+**Frames**
+
+- `layoutMode` is `HORIZONTAL` / `VERTICAL` → CSS flex (`htmlAutoLayoutProps`: direction, gap, padding, align).
+- `layoutMode` is `NONE` (or absolute children) → parent `position: relative`, children often `position: absolute` with `left`/`top` from adapted `x`/`y`.
+
+**Builders** (`HtmlDefaultBuilder` / `HtmlTextBuilder`)
+
+- Position, size, opacity, blend, rotation.
+- Fills → background / text color (solid + gradients).
+- Stroke, radius, shadow, blur.
+- Text → font, weight, line-height, letter-spacing, segments as spans.
+
+**Why output often looks “canvas-like”**
+
+If the Figma file was drawn with absolute positions (`layoutMode: NONE`) instead of Auto Layout, the converter faithfully emits absolute CSS. Flex/responsive HTML only appears where the source tree already has Auto Layout (or you later add a layout-inference step).
 
 ### Offline limits (vs live plugin)
 
