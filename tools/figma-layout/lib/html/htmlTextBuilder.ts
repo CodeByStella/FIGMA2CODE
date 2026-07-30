@@ -16,6 +16,7 @@ import {
   stylesToCSS,
   getComponentName,
 } from "./htmlMain";
+import { cssFontFamilyStack } from "./webFonts";
 
 export class HtmlTextBuilder extends HtmlDefaultBuilder {
   constructor(node: TextNode, settings: HTMLSettings) {
@@ -57,7 +58,7 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
         {
           color: htmlColorFromFills(segment.fills as any),
           "font-size": segment.fontSize,
-          "font-family": segment.fontName.family,
+          "font-family": cssFontFamilyStack(segment.fontName.family),
           "font-style": this.getFontStyle(segment.fontName.style),
           "font-weight": `${segment.fontWeight}`,
           "text-decoration": this.textDecoration(segment.textDecoration),

@@ -47,6 +47,7 @@ tools/figma-layout/
 ├── lib/                   # vendored offline HTML converter (self-contained)
 │   ├── html/              # htmlMain, builders, htmlFromRestJson
 │   ├── altNodes/          # adaptRestJson (+ helpers)
+│   ├── layout/            # semantic layout inference (flex from boxes)
 │   └── common/            # shared helpers used by HTML path
 ├── types/                 # local PluginSettings / AltNode types
 ├── package.json
@@ -140,19 +141,29 @@ flowchart TD
   A["Figma JSON dump"] --> B["CLI: read & normalize input"]
   B --> C["Prepare offline conversion"]
   C --> D["Rewrite tree for HTML builders"]
-  D --> E["Walk layers → emit markup"]
-  E --> F["Apply styles per layer"]
-  F --> G["Wrap as full HTML page"]
-  G --> H["Write from-figma.html"]
+  D --> E["Infer semantic layout from boxes"]
+  E --> F["Walk layers → emit markup"]
+  F --> G["Apply styles per layer"]
+  G --> H["Wrap as full HTML page"]
+  H --> I["Write from-figma.html"]
 ```
 
-| Stage           | What it does                                                    | Code (if you need to dig in)                                   |
-| --------------- | --------------------------------------------------------------- | -------------------------------------------------------------- |
-| CLI             | Reads the dump, picks the document root, writes the output file | `json-to-html.ts`                                              |
-| Prepare offline | Stubs Figma globals; turns off image/vector/variable features   | `lib/html/htmlFromRestJson.ts`                                 |
-| Rewrite tree    | Turns REST JSON into the in-memory shape the HTML path expects  | `lib/altNodes/adaptRestJson.ts`                                |
-| Walk & emit     | Chooses a handler by layer type (frame, text, …)                | `lib/html/htmlMain.ts`                                         |
-| Apply styles    | Position, size, fills, text, flex vs absolute                   | `htmlDefaultBuilder.ts`, `htmlTextBuilder.ts`, `builderImpl/*` |
+| Stage                 | What it does                                                      | Code (if you need to dig in)                                   |
+| --------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------- |
+| CLI                   | Reads the dump, picks the document root, writes the output file   | `json-to-html.ts`                                              |
+| Prepare offline       | Stubs Figma globals; turns off image/vector/variable features     | `lib/html/htmlFromRestJson.ts`                                 |
+| Rewrite tree          | Turns REST JSON into the in-memory shape the HTML path expects    | `lib/altNodes/adaptRestJson.ts`                                |
+| Infer semantic layout | Detects rows/columns, gap, padding, overlays → Auto Layout fields | `lib/layout/inferSemanticLayout.ts`                            |
+| Walk & emit           | Chooses a handler by layer type (frame, text, …)                  | `lib/html/htmlMain.ts`                                         |
+| Apply styles          | Position, size, fills, text, flex vs absolute                     | `htmlDefaultBuilder.ts`, `htmlTextBuilder.ts`, `builderImpl/*` |
+
+Semantic layout is **on by default**. Disable or tune:
+
+```bash
+pnpm html -- --no-infer
+pnpm html -- --threshold=2
+pnpm test:layout   # unit tests for inference
+```
 
 ### 1) Normalize the dump
 
@@ -211,11 +222,40 @@ What this pass fixes up:
 - **Missing Auto Layout fields** — defaults so builders don’t crash (`layoutMode` → `"NONE"` when absent).
 - **SVG flatten** — disabled offline (no export from Figma).
 
-### 4) Walk layers and emit HTML
+### 4) Infer semantic layout
+
+Bottom-up pass over freeform parents (`layoutMode` missing / `NONE`). Parents that already use Figma Auto Layout are left alone.
 
 ```mermaid
 flowchart TD
-  Roots["Rewritten layers"] --> W["For each visible layer"]
+  P["Parent with 2+ children"] --> Skip{"Already Auto Layout?"}
+  Skip -->|yes| Done["Leave as-is"]
+  Skip -->|no| Boxes["Read x y width height"]
+  Boxes --> Split["Split flow vs overlapping decorations"]
+  Split --> Stack{"Shared row or column within threshold?"}
+  Stack -->|no| AbsKeep["Keep absolute / relative"]
+  Stack -->|yes| Flex["Set flex fields: direction gap padding align"]
+  Flex --> Check{"Simulated positions within threshold?"}
+  Check -->|no| Revert["Revert this parent"]
+  Check -->|yes| Keep["Keep inferred Auto Layout"]
+```
+
+What it looks for (default threshold **4px** for designer pixel slop):
+
+- **Rows** — siblings share top, center Y, or bottom.
+- **Columns** — siblings share left, center X, or right.
+- **Gap / padding** — from consecutive spacing and insets from the parent edges.
+- **Main-axis align** — start, or space-between when end insets are ~0 and gaps match.
+- **Overlaps** — smaller / vector layers on top of a larger one become `position: absolute` decorations; the rest can still flex.
+- **Safety** — if packing the inferred flex would drift more than the threshold from the original boxes, that parent is reverted.
+
+Absolute CSS remains for decorations and for parents that cannot be inferred confidently.
+
+### 5) Walk layers and emit HTML
+
+```mermaid
+flowchart TD
+  Roots["Rewritten + inferred layers"] --> W["For each visible layer"]
   W --> Type{"Layer type"}
   Type -->|Rectangle / ellipse| Cont["Box with styles"]
   Type -->|Group| Grp["Render children only"]
@@ -224,7 +264,7 @@ flowchart TD
   Type -->|Line| Ln["Line element"]
   Type -->|Vector| Vec["Warning + empty box placeholder"]
   Type -->|Other| Warn["Unsupported — skip"]
-  Fr --> AL{"Uses Figma Auto Layout?"}
+  Fr --> AL{"Uses Auto Layout?"}
   AL -->|yes| Flex["CSS flex row/column, gap, align"]
   AL -->|no| Abs["Relative parent + absolute children"]
   Flex --> Cont
@@ -235,7 +275,7 @@ flowchart TD
 
 **Frames**
 
-- Auto Layout (`HORIZONTAL` / `VERTICAL`) → CSS flex (direction, gap, padding, alignment).
+- Auto Layout (`HORIZONTAL` / `VERTICAL`) — from Figma or inference → CSS flex (direction, gap, padding, alignment).
 - No Auto Layout (`NONE`, or absolute children) → parent `position: relative`, children often `position: absolute` with `left` / `top`.
 
 **Styles applied per layer**
@@ -245,9 +285,9 @@ flowchart TD
 - Stroke, corner radius, shadow, blur.
 - Text → font, weight, line-height, letter-spacing, spans.
 
-**Why output often looks “canvas-like”**
+**Why some output can still look “canvas-like”**
 
-If the Figma file was drawn with absolute positions instead of Auto Layout, the converter mirrors that with absolute CSS. Flex / responsive HTML only appears where the source already uses Auto Layout (or after a separate layout-inference step).
+Freeform artboards and failed inferences stay absolute. Inference improves structure where alignment clues are clear; it does not invent responsive breakpoints.
 
 ### Offline limits (vs live plugin)
 
@@ -263,11 +303,13 @@ If the Figma file was drawn with absolute positions instead of Auto Layout, the 
 
 ## Scripts
 
-| Where        | Command              | Runs                                   |
-| ------------ | -------------------- | -------------------------------------- |
-| This package | `pnpm filter`        | `node filter-layout.js`                |
-| This package | `pnpm html`          | `tsx json-to-html.ts`                  |
-| This package | `pnpm serve`         | static server on `:8765`               |
-| Repo root    | `pnpm layout:filter` | `pnpm --dir tools/figma-layout filter` |
-| Repo root    | `pnpm layout:html`   | `pnpm --dir tools/figma-layout html`   |
-| Repo root    | `pnpm layout:serve`  | `pnpm --dir tools/figma-layout serve`  |
+| Where        | Command              | Runs                                        |
+| ------------ | -------------------- | ------------------------------------------- |
+| This package | `pnpm filter`        | `node filter-layout.js`                     |
+| This package | `pnpm html`          | `tsx json-to-html.ts`                       |
+| This package | `pnpm serve`         | static server on `:8765`                    |
+| This package | `pnpm test:layout`   | layout inference unit tests                 |
+| Repo root    | `pnpm layout:filter` | `pnpm --dir tools/figma-layout filter`      |
+| Repo root    | `pnpm layout:html`   | `pnpm --dir tools/figma-layout html`        |
+| Repo root    | `pnpm layout:serve`  | `pnpm --dir tools/figma-layout serve`       |
+| Repo root    | `pnpm layout:test`   | `pnpm --dir tools/figma-layout test:layout` |

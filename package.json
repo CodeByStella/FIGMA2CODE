@@ -12,7 +12,8 @@
     "prepare": "husky",
     "layout:filter": "pnpm --dir tools/figma-layout filter",
     "layout:html": "pnpm --dir tools/figma-layout html",
-    "layout:serve": "pnpm --dir tools/figma-layout serve"
+    "layout:serve": "pnpm --dir tools/figma-layout serve",
+    "layout:test": "pnpm --dir tools/figma-layout test:layout"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,css,md,json}": [
