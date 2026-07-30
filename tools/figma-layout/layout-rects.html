@@ -179,6 +179,8 @@
         const drawList = items.map(({ node, box }) => ({
           id: node.id || "(no id)",
           type: node.type || "",
+          absX: box.x,
+          absY: box.y,
           x: box.x - minX + pad,
           y: box.y - minY + pad,
           w: box.width,
@@ -243,7 +245,7 @@
           .join("");
 
         document.getElementById("meta").textContent =
-          `${items.length} rects · ${Math.round(maxX - minX)}×${Math.round(maxY - minY)} · hover shows type + id · click copies id`;
+          `${items.length} rects · ${Math.round(maxX - minX)}×${Math.round(maxY - minY)} · hover for details · click copies id`;
 
         const tip = document.getElementById("tooltip");
 
@@ -269,8 +271,17 @@
           };
         }
 
+        function fmt(n) {
+          return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+        }
+
         function tipLabel(hit) {
-          return hit.type ? `${hit.type}\n${hit.id}` : hit.id;
+          const lines = [];
+          if (hit.type) lines.push(hit.type);
+          lines.push(hit.id);
+          lines.push(`x: ${fmt(hit.absX)}  y: ${fmt(hit.absY)}`);
+          lines.push(`w: ${fmt(hit.w)}  h: ${fmt(hit.h)}`);
+          return lines.join("\n");
         }
 
         function placeTip(e, hit, text = tipLabel(hit)) {

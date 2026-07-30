@@ -1,6 +1,5 @@
 import { numberToFixedString } from "../../common/numToAutoFixed";
 import { formatWithJSX } from "../../common/parseJSX";
-import { AltNode } from "../../alt_api_types";
 
 /**
  * https://tailwindcss.com/docs/opacity/
@@ -109,9 +108,14 @@ export const htmlVisibility = (
  * default is [-180, -90, -45, 0, 45, 90, 180], but '0' will be ignored:
  * if rotation was changed, let it be perceived. Therefore, 1 => 45
  */
-export const htmlRotation = (node: AltNode, isJsx: boolean): string[] => {
+export const htmlRotation = (
+  node: SceneNode & { cumulativeRotation?: number },
+  isJsx: boolean,
+): string[] => {
+  const rotationDeg =
+    "rotation" in node && typeof node.rotation === "number" ? node.rotation : 0;
   const rotation =
-    -Math.round((node.rotation || 0) + (node.cumulativeRotation || 0)) || 0;
+    -Math.round(rotationDeg + (node.cumulativeRotation || 0)) || 0;
 
   if (rotation !== 0) {
     return [

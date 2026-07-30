@@ -97,7 +97,7 @@ Default: `data/figma_raw.json` → `data/figma_layout.json`.
 
 | Action | Behavior                                                       |
 | ------ | -------------------------------------------------------------- |
-| Hover  | Yellow highlight + tooltip with `type` and `id`                |
+| Hover  | Yellow highlight + tooltip (`type`, `id`, x/y, w×h)            |
 | Click  | Copies `id` to clipboard; rect flashes red while mouse is down |
 
 Serve this folder (`file://` cannot `fetch` JSON):

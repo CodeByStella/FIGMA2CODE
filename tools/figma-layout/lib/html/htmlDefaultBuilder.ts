@@ -147,7 +147,7 @@ export class HtmlDefaultBuilder {
     const { node, isJSX } = this;
     this.addStyles(
       htmlVisibility(node, isJSX),
-      ...htmlRotation(node as LayoutMixin, isJSX),
+      ...htmlRotation(node, isJSX),
       htmlOpacity(node as MinimalBlendMixin, isJSX),
       htmlBlendMode(node as MinimalBlendMixin, isJSX),
     );
@@ -389,7 +389,7 @@ export class HtmlDefaultBuilder {
     const { node } = this;
     if ("effects" in node && node.effects.length > 0) {
       const blur = node.effects.find(
-        (e) => e.type === "LAYER_BLUR" && e.visible,
+        (e): e is BlurEffect => e.type === "LAYER_BLUR" && e.visible,
       );
       if (blur) {
         this.addStyles(
@@ -402,7 +402,7 @@ export class HtmlDefaultBuilder {
       }
 
       const backgroundBlur = node.effects.find(
-        (e) => e.type === "BACKGROUND_BLUR" && e.visible,
+        (e): e is BlurEffect => e.type === "BACKGROUND_BLUR" && e.visible,
       );
       if (backgroundBlur) {
         this.addStyles(

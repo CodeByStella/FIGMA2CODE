@@ -393,24 +393,24 @@ const convertNode = (settings: HTMLSettings) => async (node: SceneNode) => {
     }
   }
 
-  switch ((node as any).type) {
+  switch (node.type) {
     case "RECTANGLE":
     case "ELLIPSE":
       return await htmlContainer(node, "", [], settings);
     case "GROUP":
-      return await htmlGroup(node, settings);
+      return await htmlGroup(node as GroupNode, settings);
     case "FRAME":
     case "COMPONENT":
     case "INSTANCE":
     case "COMPONENT_SET":
     case "SLOT":
-      return await htmlFrame(node, settings);
+      return await htmlFrame(node as SceneNode & BaseFrameMixin, settings);
     case "SECTION":
-      return await htmlSection(node, settings);
+      return await htmlSection(node as SectionNode, settings);
     case "TEXT":
-      return htmlText(node, settings);
+      return htmlText(node as TextNode, settings);
     case "LINE":
-      return htmlLine(node, settings);
+      return htmlLine(node as LineNode, settings);
     case "VECTOR":
       if (!settings.embedVectors && !isPreviewGlobal) {
         addWarning("Vector is not supported");

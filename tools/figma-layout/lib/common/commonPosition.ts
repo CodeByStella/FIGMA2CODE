@@ -1,25 +1,33 @@
 import { HTMLSettings, TailwindSettings } from "types";
 
+type PositionNode = SceneNode & { svg?: string };
+
 export const getCommonPositionValue = (
-  node: SceneNode,
+  node: PositionNode,
   settings?: HTMLSettings | TailwindSettings,
 ): { x: number; y: number } => {
-  if (node.parent && node.parent.absoluteBoundingBox) {
+  const parent = node.parent;
+  if (
+    parent &&
+    "absoluteBoundingBox" in parent &&
+    parent.absoluteBoundingBox &&
+    node.absoluteBoundingBox
+  ) {
     if (settings?.embedVectors && node.svg) {
       // When embedding vectors, we need to use the absolute position, since it already includes the rotation.
       return {
-        x: node.absoluteBoundingBox.x - node.parent.absoluteBoundingBox.x,
-        y: node.absoluteBoundingBox.y - node.parent.absoluteBoundingBox.y,
+        x: node.absoluteBoundingBox.x - parent.absoluteBoundingBox.x,
+        y: node.absoluteBoundingBox.y - parent.absoluteBoundingBox.y,
       };
     }
 
     return { x: node.x, y: node.y };
   }
 
-  if (node.parent && node.parent.type === "GROUP") {
+  if (parent && parent.type === "GROUP") {
     return {
-      x: node.x - node.parent.x,
-      y: node.y - node.parent.y,
+      x: node.x - parent.x,
+      y: node.y - parent.y,
     };
   }
 

@@ -262,12 +262,10 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
     if (this.node && (this.node as TextNode).effects) {
       const effects = (this.node as TextNode).effects;
       const blurEffect = effects.find(
-        (effect) =>
-          effect.type === "LAYER_BLUR" &&
-          effect.visible !== false &&
-          effect.radius > 0,
+        (effect): effect is BlurEffect =>
+          effect.type === "LAYER_BLUR" && effect.visible !== false,
       );
-      if (blurEffect && blurEffect.radius) {
+      if (blurEffect && blurEffect.radius > 0) {
         return `blur(${blurEffect.radius}px)`;
       }
     }
