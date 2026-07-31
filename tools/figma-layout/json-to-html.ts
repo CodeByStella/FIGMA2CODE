@@ -4,6 +4,8 @@
  * Usage (from this directory):
  *   pnpm html
  *   pnpm html -- data/figma_raw.json data/out.html
+ *   pnpm html -- --no-infer data/figma_raw.json data/out.html
+ *   pnpm html -- --threshold=2 data/figma_raw.json data/out.html
  *
  * Or from repo root:
  *   pnpm layout:html
@@ -13,23 +15,50 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { htmlFromRestJson } from "./lib/html/htmlFromRestJson";
+import { DEFAULT_THRESHOLD_PX } from "./lib/layout/geometry";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "data");
 
-const inputPath = path.resolve(
-  process.argv[2] || path.join(DATA_DIR, "figma_raw.json"),
-);
-const outputPath = path.resolve(
-  process.argv[3] || path.join(DATA_DIR, "from-figma.html"),
+function parseArgs(argv: string[]) {
+  let inferLayout = true;
+  let layoutThresholdPx = DEFAULT_THRESHOLD_PX;
+  const positional: string[] = [];
+
+  for (const arg of argv) {
+    if (arg === "--no-infer") {
+      inferLayout = false;
+      continue;
+    }
+    if (arg.startsWith("--threshold=")) {
+      const n = Number(arg.slice("--threshold=".length));
+      if (Number.isFinite(n) && n >= 0) layoutThresholdPx = n;
+      continue;
+    }
+    if (arg.startsWith("-")) continue;
+    positional.push(arg);
+  }
+
+  return {
+    inferLayout,
+    layoutThresholdPx,
+    inputPath: path.resolve(
+      positional[0] || path.join(DATA_DIR, "figma_raw.json"),
+    ),
+    outputPath: path.resolve(
+      positional[1] || path.join(DATA_DIR, "from-figma.html"),
+    ),
+  };
+}
+
+const { inferLayout, layoutThresholdPx, inputPath, outputPath } = parseArgs(
+  process.argv.slice(2),
 );
 
 function unwrapRoot(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const obj = raw as Record<string, unknown>;
-  // Full file response: { document: { ... } }
   if (obj.document && typeof obj.document === "object") return obj.document;
-  // nodes map: { nodes: { "1:2": { document: {...} } } }
   if (obj.nodes && typeof obj.nodes === "object") {
     const first = Object.values(obj.nodes as Record<string, any>)[0];
     if (first?.document) return first.document;
@@ -51,11 +80,14 @@ async function main() {
       : "Figma export";
 
   console.log(`Converting ${inputPath} …`);
+  console.log(`inferLayout=${inferLayout} thresholdPx=${layoutThresholdPx}`);
   const started = Date.now();
   const result = await htmlFromRestJson(root, {
     title: name,
     fullDocument: true,
     htmlGenerationMode: "html",
+    inferLayout,
+    layoutThresholdPx,
   });
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });

@@ -6,7 +6,8 @@
   "scripts": {
     "filter": "node filter-layout.js",
     "html": "tsx json-to-html.ts",
-    "serve": "python -m http.server 8765 --directory ."
+    "serve": "python -m http.server 8765 --directory .",
+    "test:layout": "tsx lib/layout/__tests__/inferSemanticLayout.test.ts"
   },
   "dependencies": {
     "@figma/plugin-typings": "^1.125.0",

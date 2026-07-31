@@ -65,25 +65,11 @@ function processJsonNode(
     jsonNode.rotation = -jsonNode.rotation * (180 / Math.PI);
   }
 
-  // Inline GROUP children into parent
-  if (nodeType === "GROUP" && Array.isArray(jsonNode.children)) {
-    const processedChildren: AnyNode[] = [];
-    const visibleChildren = jsonNode.children.filter(
-      (child: AnyNode) => child.visible !== false,
-    );
-    for (const child of visibleChildren) {
-      const processedChild = processJsonNode(
-        child,
-        settings,
-        parentNode,
-        parentCumulativeRotation + (jsonNode.rotation || 0),
-      );
-      if (processedChild == null) continue;
-      if (Array.isArray(processedChild))
-        processedChildren.push(...processedChild);
-      else processedChildren.push(processedChild);
-    }
-    return processedChildren;
+  // Keep GROUP as a positioned wrapper (do not flatten into parent).
+  // Flattening dumps hundreds of hero vectors onto the artboard and breaks
+  // section order / semantic layout. Nested children still get processed below.
+  if (nodeType === "GROUP" && !jsonNode.layoutMode) {
+    jsonNode.layoutMode = "NONE";
   }
 
   if (nodeType === "SLICE") return null;
