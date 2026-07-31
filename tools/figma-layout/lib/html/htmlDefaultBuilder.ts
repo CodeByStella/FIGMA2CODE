@@ -351,6 +351,11 @@ export class HtmlDefaultBuilder {
     const { width, height, constraints } = htmlSizePartial(
       node,
       settings.htmlGenerationMode === "jsx",
+      {
+        responsiveRoot: Boolean(
+          (settings as { responsiveRoot?: boolean }).responsiveRoot,
+        ),
+      },
     );
 
     if (node.type === "TEXT") {

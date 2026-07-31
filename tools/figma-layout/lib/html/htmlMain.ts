@@ -573,6 +573,13 @@ const htmlFrame = async (
 
 // properties named propSomething always take care of ","
 // sometimes a property might not exist, so it doesn't add ","
+const isResponsiveRootNode = (
+  node: SceneNode,
+  settings: HTMLSettings,
+): boolean =>
+  Boolean((settings as PluginSettings).responsiveRoot) &&
+  node.parent === undefined;
+
 const htmlContainer = async (
   node: SceneNode &
     SceneNodeMixin &
@@ -587,6 +594,55 @@ const htmlContainer = async (
   // ignore the view when size is zero or less
   if (node.width <= 0 || node.height <= 0) {
     return children;
+  }
+
+  const responsiveRoot = isResponsiveRootNode(node, settings);
+  const isJsx = settings.htmlGenerationMode === "jsx";
+
+  // Full-bleed outer shell + centered max-width content wrapper.
+  if (responsiveRoot && children) {
+    const outerBuilder = new HtmlDefaultBuilder(node, settings);
+    // Full-bleed shell: width only — height comes from the inner content box.
+    outerBuilder.addStyles(formatWithJSX("width", isJsx, "100%"));
+    outerBuilder.commonShapeStyles();
+    outerBuilder.blend();
+
+    if (nodeHasImageFill(node)) {
+      const altNode = node as AltNode<ExportableNode>;
+      const hasChildren = "children" in node && node.children.length > 0;
+      let imgUrl = "";
+      if (
+        settings.embedImages &&
+        (settings as PluginSettings).framework === "HTML"
+      ) {
+        imgUrl = (await exportNodeAsBase64PNG(altNode, hasChildren)) ?? "";
+      } else {
+        imgUrl = getPlaceholderImage(node.width, node.height);
+      }
+      outerBuilder.addStyles(
+        formatWithJSX("background-image", isJsx, `url(${imgUrl})`),
+      );
+    }
+
+    const innerBuilder = new HtmlDefaultBuilder(node, settings);
+    innerBuilder.addStyles(
+      formatWithJSX("width", isJsx, "100%"),
+      formatWithJSX("max-width", isJsx, node.width),
+      formatWithJSX("margin-left", isJsx, "auto"),
+      formatWithJSX("margin-right", isJsx, "auto"),
+      formatWithJSX("position", isJsx, "relative"),
+    );
+    // Match prior single-root sizing: content-box height + padding (absolute
+    // top:0 stays at the padding edge; avoid border-box shrinking the CB).
+    if (typeof node.height === "number" && node.height > 0) {
+      innerBuilder.addStyles(formatWithJSX("height", isJsx, node.height));
+    }
+    innerBuilder.autoLayoutPadding();
+
+    const outerAttr = outerBuilder.build();
+    const innerAttr = innerBuilder.build(additionalStyles);
+    const inner = `<div${innerAttr}>${indentString(children)}\n</div>`;
+    return `\n<div${outerAttr}>${indentString(inner)}\n</div>`;
   }
 
   const builder = new HtmlDefaultBuilder(node, settings)
