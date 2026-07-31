@@ -2,22 +2,54 @@ import { numberToFixedString } from "../../common/numToAutoFixed";
 import { retrieveTopFill } from "../../common/retrieveFill";
 import { GradientPaint, Paint } from "../../api_types";
 
+/** Parse `#rgb` / `#rrggbb` / `#rrggbbaa` into 0–1 RGB (alpha ignored). */
+export const rgbFromHex = (hex: string): RGB | null => {
+  const raw = hex.trim().replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{8}$/.test(raw)) {
+    return null;
+  }
+  const full =
+    raw.length === 3
+      ? raw
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : raw.slice(0, 6);
+  const n = parseInt(full, 16);
+  return {
+    r: ((n >> 16) & 255) / 255,
+    g: ((n >> 8) & 255) / 255,
+    b: (n & 255) / 255,
+  };
+};
+
+const solidColorFromFill = (fill: Paint & { hex?: string }): RGB | null => {
+  if (fill.color && typeof (fill.color as RGB).r === "number") {
+    return fill.color as RGB;
+  }
+  if (typeof fill.hex === "string") {
+    return rgbFromHex(fill.hex);
+  }
+  return null;
+};
+
 /**
  * Helper to process a color with variable binding if present
  */
 export const processColorWithVariable = (fill: {
-  color: RGB;
+  color?: RGB | null;
   opacity?: number;
   variableColorName?: string;
 }): string => {
   const opacity = fill.opacity ?? 1;
+  const color = fill.color ?? { r: 0, g: 0, b: 0 };
 
   if (fill.variableColorName) {
     const varName = fill.variableColorName;
-    const fallbackColor = htmlColor(fill.color, opacity);
+    const fallbackColor = htmlColor(color, opacity);
     return `var(--${varName}, ${fallbackColor})`;
   }
-  return htmlColor(fill.color, opacity);
+  return htmlColor(color, opacity);
 };
 
 /**
@@ -32,7 +64,11 @@ const getColorAndVariable = (
 } => {
   if (fill.type === "SOLID") {
     return {
-      color: fill.color,
+      color: solidColorFromFill(fill as Paint & { hex?: string }) ?? {
+        r: 0,
+        g: 0,
+        b: 0,
+      },
       opacity: fill.opacity ?? 1,
       variableColorName: (fill as any).variableColorName,
     };
@@ -41,11 +77,12 @@ const getColorAndVariable = (
       fill.type === "GRADIENT_RADIAL" ||
       fill.type === "GRADIENT_ANGULAR" ||
       fill.type === "GRADIENT_DIAMOND") &&
+    Array.isArray(fill.gradientStops) &&
     fill.gradientStops.length > 0
   ) {
     const firstStop = fill.gradientStops[0];
     return {
-      color: firstStop.color,
+      color: firstStop.color ?? { r: 0, g: 0, b: 0 },
       opacity: fill.opacity ?? 1,
       variableColorName: (firstStop as any).variableColorName,
     };
@@ -77,7 +114,13 @@ export const htmlColorFromFill = (fill: Paint): string => {
 /**
  * Convert RGB color to CSS color string
  */
-export const htmlColor = (color: RGB, alpha: number = 1): string => {
+export const htmlColor = (
+  color: RGB | null | undefined,
+  alpha: number = 1,
+): string => {
+  if (!color || typeof color.r !== "number") {
+    return alpha < 1 ? `rgba(0, 0, 0, ${numberToFixedString(alpha)})` : "black";
+  }
   if (color.r === 1 && color.g === 1 && color.b === 1 && alpha === 1) {
     return "white";
   }
@@ -107,15 +150,16 @@ const processGradientStop = (
   positionMultiplier: number = 100,
   unit: string = "%",
 ): string => {
+  const stopColor = stop.color ?? { r: 0, g: 0, b: 0, a: 1 };
   const fillInfo = {
-    color: stop.color,
-    opacity: stop.color.a * fillOpacity,
+    color: stopColor,
+    opacity: (stopColor.a ?? 1) * fillOpacity,
     boundVariables: stop.boundVariables,
     variableColorName: (stop as any).variableColorName,
   };
 
   const color = processColorWithVariable(fillInfo);
-  const position = `${(stop.position * positionMultiplier).toFixed(0)}${unit}`;
+  const position = `${((stop.position ?? 0) * positionMultiplier).toFixed(0)}${unit}`;
   return `${color} ${position}`;
 };
 
@@ -140,6 +184,7 @@ const processGradientStops = (
  */
 export const htmlGradientFromFills = (fill: Paint): string => {
   if (!fill) return "";
+  if (!Array.isArray((fill as GradientPaint).gradientStops)) return "";
   switch (fill.type) {
     case "GRADIENT_LINEAR":
       return htmlLinearGradient(fill);
@@ -158,7 +203,9 @@ export const htmlGradientFromFills = (fill: Paint): string => {
  * Generate CSS linear gradient
  */
 export const htmlLinearGradient = (fill: GradientPaint) => {
-  const [start, end] = fill.gradientHandlePositions;
+  const handles = fill.gradientHandlePositions;
+  if (!handles || handles.length < 2 || !fill.gradientStops?.length) return "";
+  const [start, end] = handles;
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   let angle = Math.atan2(dy, dx) * (180 / Math.PI); // Angle in degrees
