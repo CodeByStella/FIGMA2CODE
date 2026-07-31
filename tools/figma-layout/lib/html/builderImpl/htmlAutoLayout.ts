@@ -61,12 +61,14 @@ const getAlignContent = (node: InferredAutoLayoutResult): string => {
 const getFlex = (
   node: SceneNode,
   autoLayout: InferredAutoLayoutResult,
-): string =>
-  node.parent &&
-  "layoutMode" in node.parent &&
-  node.parent.layoutMode === autoLayout.layoutMode
+): string => {
+  // Page root must be block-level flex so width:100% / max-width centering works.
+  if (!node.parent) return "flex";
+  return "layoutMode" in node.parent &&
+    node.parent.layoutMode === autoLayout.layoutMode
     ? "flex"
     : "inline-flex";
+};
 
 export const htmlAutoLayoutProps = (
   node: SceneNode & InferredAutoLayoutResult,

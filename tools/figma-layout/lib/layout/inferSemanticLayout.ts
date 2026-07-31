@@ -79,6 +79,9 @@ function inferNode(
   // Only rewrite freeform parents; keep designer Auto Layout.
   const mode = node.layoutMode;
   if (mode === "HORIZONTAL" || mode === "VERTICAL") return;
+  // Figma GROUPs are freeform absolute containers; never promote to flex
+  // (htmlGroup also doesn't emit auto-layout — inference would drop child left/top).
+  if (node.type === "GROUP") return;
   if (kids.length < 2) return;
 
   const parentBox = nodeBox({

@@ -299,5 +299,50 @@ console.log("inferSemanticLayout tests");
   assert(out.paddingTop > 0, `overflow paddingTop (got ${out.paddingTop})`);
 }
 
+{
+  console.log("\n10) GROUP collage stays freeform (no flex inference)");
+  const raw = {
+    id: "collage",
+    name: "Group 40",
+    type: "GROUP",
+    visible: true,
+    absoluteBoundingBox: { x: 0, y: 0, width: 550, height: 600 },
+    children: [
+      {
+        id: "a",
+        name: "CardA",
+        type: "GROUP",
+        visible: true,
+        absoluteBoundingBox: { x: 0, y: 120, width: 300, height: 360 },
+        children: [],
+      },
+      {
+        id: "b",
+        name: "CardB",
+        type: "GROUP",
+        visible: true,
+        absoluteBoundingBox: { x: 350, y: 0, width: 200, height: 600 },
+        children: [],
+      },
+    ],
+  };
+  const adapted = adaptRestJsonToAltNodes(raw as any);
+  const out = inferSemanticLayout(adapted, { thresholdPx: 4 })[0];
+  assert(
+    out.layoutMode === "NONE",
+    `GROUP layoutMode stays NONE (got ${out.layoutMode})`,
+  );
+  assert(out.children.length === 2, "both collage groups kept");
+  const [a, b] = out.children;
+  assert(
+    Math.abs(a.x - 0) < 1 && Math.abs(a.y - 120) < 1,
+    `CardA at 0,120 (got ${a.x},${a.y})`,
+  );
+  assert(
+    Math.abs(b.x - 350) < 1 && Math.abs(b.y - 0) < 1,
+    `CardB at 350,0 (got ${b.x},${b.y})`,
+  );
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

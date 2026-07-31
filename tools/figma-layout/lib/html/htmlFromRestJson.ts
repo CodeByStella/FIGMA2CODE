@@ -25,7 +25,8 @@ const defaultSettings: PluginSettings = {
   framework: "HTML",
   showLayerNames: false,
   useOldPluginVersion2025: false,
-  responsiveRoot: false,
+  // Web export: artboard is width:100% with design width as max-width.
+  responsiveRoot: true,
   flutterGenerationMode: "snippet",
   swiftUIGenerationMode: "snippet",
   composeGenerationMode: "snippet",
@@ -120,7 +121,7 @@ export async function htmlFromRestJson(
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtml(title)}</title>
   ${fontLinks}
-  <style>body { margin: 0; }</style>
+  <style>html, body { margin: 0; width: 100%; }</style>
   ${css}
 </head>
 <body>
