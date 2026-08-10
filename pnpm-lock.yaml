@@ -325,31 +325,6 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  tools/figma-layout:
-    dependencies:
-      '@figma/plugin-typings':
-        specifier: ^1.125.0
-        version: 1.125.0
-      html-entities:
-        specifier: ^2.6.0
-        version: 2.6.0
-      js-base64:
-        specifier: ^3.7.8
-        version: 3.7.8
-      types:
-        specifier: file:./types
-        version: file:tools/figma-layout/types
-    devDependencies:
-      '@types/node':
-        specifier: ^25.7.0
-        version: 25.7.0
-      tsx:
-        specifier: ^4.23.1
-        version: 4.23.1
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
 packages:
 
   '@alloc/quick-lru@5.2.0':
@@ -3258,9 +3233,6 @@ packages:
   typed-array-length@1.0.7:
     resolution: {integrity: sha512-3KS2b+kL7fsuk/eJZ7EQdnEmQoaho/r6KUef7hxvltNA5DR8NAUM+8wJMbJyZ4G9/7i3v5zPBIMN5aybAh2/Jg==}
     engines: {node: '>= 0.4'}
-
-  types@file:tools/figma-layout/types:
-    resolution: {directory: tools/figma-layout/types, type: directory}
 
   typescript-eslint@8.59.3:
     resolution: {integrity: sha512-KgusgyDgG4LI8Ih/sWaCtZ06tckLAS5CvT5A4D1Q7bYVoAAyzwiZvE4BmwDHkhRVkvhRBepKeASoFzQetha7Fg==}
@@ -6282,10 +6254,6 @@ snapshots:
       is-typed-array: 1.1.15
       possible-typed-array-names: 1.1.0
       reflect.getprototypeof: 1.0.10
-
-  types@file:tools/figma-layout/types:
-    dependencies:
-      '@figma/plugin-typings': 1.125.0
 
   typescript-eslint@8.59.3(eslint@10.3.0(jiti@2.7.0))(typescript@6.0.3):
     dependencies:

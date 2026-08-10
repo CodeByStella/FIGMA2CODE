@@ -2,6 +2,7 @@ import { AltNode, ExportableNode } from "types";
 import { btoa } from "js-base64";
 import { addWarning } from "./commonConversionWarnings";
 import { exportAsyncProxy } from "./exportAsyncProxy";
+import { getCachedAsset } from "../export/assetCache";
 
 export const PLACEHOLDER_IMAGE_DOMAIN = "https://placehold.co";
 
@@ -91,6 +92,13 @@ export const exportNodeAsBase64PNG = async <T extends ExportableNode>(
     return node.base64;
   }
 
+  // Prefer bytes from ZIP asset export (framed PNG / accurate bake)
+  const cached = node.id ? getCachedAsset(node.id) : undefined;
+  if (cached && cached.format !== "SVG") {
+    node.base64 = cached.dataUrl;
+    return cached.dataUrl;
+  }
+
   const n: ExportableNode = node;
 
   const temporarilyHideChildren =
@@ -100,13 +108,13 @@ export const exportNodeAsBase64PNG = async <T extends ExportableNode>(
 
   if (temporarilyHideChildren) {
     // Store the original visible state of children
-    parent.children.map((child: SceneNode) =>
+    (parent.children.map((child: SceneNode) =>
       originalVisibility.set(child, child.visible),
     ),
       // Temporarily hide all children
       parent.children.forEach((child) => {
         child.visible = false;
-      });
+      }));
   }
 
   // export the image as bytes

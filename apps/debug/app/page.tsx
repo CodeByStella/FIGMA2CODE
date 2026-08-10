@@ -34,8 +34,7 @@ export default function Web() {
                 isLoading={false}
                 selectedFramework={selectedFramework}
                 setSelectedFramework={setSelectedFramework}
-                htmlPreview={null}
-                settings={undefined}
+                settings={null}
                 onPreferenceChanged={() => {}}
                 colors={[]}
                 gradients={[]}
@@ -57,8 +56,7 @@ export default function Web() {
                 isLoading={false}
                 selectedFramework={selectedFramework}
                 setSelectedFramework={setSelectedFramework}
-                htmlPreview={null}
-                settings={undefined}
+                settings={null}
                 onPreferenceChanged={() => {}}
                 colors={[]}
                 gradients={[]}

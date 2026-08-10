@@ -1,10 +1,17 @@
 import { htmlColor } from "./htmlColor";
+import { getCachedAsset } from "../../export/assetCache";
 
 /**
  * https://tailwindcss.com/docs/box-shadow/
  * example: shadow
  */
 export const htmlShadow = (node: BlendMixin): string => {
+  // Skip CSS shadows when the ZIP export already baked effects into the asset
+  const id = (node as SceneNode).id;
+  const cached = id ? getCachedAsset(id) : undefined;
+  if (cached?.effectsBaked || (node as any).effectsBaked) {
+    return "";
+  }
   // [when testing] node.effects can be undefined
   if (node.effects && node.effects.length > 0) {
     const shadowEffects = node.effects.filter(

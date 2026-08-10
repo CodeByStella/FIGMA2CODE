@@ -5,12 +5,12 @@ import {
   PluginSettings,
   ConversionMessage,
   Message,
-  HTMLPreview,
   LinearGradientConversion,
   SolidColorConversion,
   ErrorMessage,
   SettingsChangedMessage,
   Warning,
+  ZipExportPayload,
 } from "types";
 import { postUISettingsChangingMessage } from "./messaging";
 import copy from "copy-to-clipboard";
@@ -19,14 +19,14 @@ interface AppState {
   code: string;
   selectedFramework: Framework;
   isLoading: boolean;
-  htmlPreview: HTMLPreview;
   settings: PluginSettings | null;
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
   warnings: Warning[];
+  zipExport: ZipExportPayload | null;
+  statusMessage: string;
 }
 
-const emptyPreview = { size: { width: 0, height: 0 }, content: "" };
 const isDarkFigmaBackground = (background: string) => {
   const value = background.trim().toLowerCase();
 
@@ -44,11 +44,12 @@ export default function App() {
     code: "",
     selectedFramework: "HTML",
     isLoading: true,
-    htmlPreview: emptyPreview,
     settings: null,
     colors: [],
     gradients: [],
     warnings: [],
+    zipExport: null,
+    statusMessage: "",
   });
 
   const rootStyles = getComputedStyle(document.documentElement);
@@ -66,6 +67,16 @@ export default function App() {
           setState((prevState) => ({
             ...prevState,
             code: "",
+            zipExport: null,
+            statusMessage: "Starting…",
+            isLoading: true,
+          }));
+          break;
+
+        case "progress":
+          setState((prevState) => ({
+            ...prevState,
+            statusMessage: (untypedMessage as any).message || "",
             isLoading: true,
           }));
           break;
@@ -75,7 +86,11 @@ export default function App() {
           setState((prevState) => ({
             ...prevState,
             ...conversionMessage,
+            zipExport: conversionMessage.zipExport || null,
             selectedFramework: conversionMessage.settings.framework,
+            statusMessage: conversionMessage.zipExport
+              ? `Ready — ${conversionMessage.zipExport.assetCount} assets in ZIP`
+              : "Ready",
             isLoading: false,
           }));
           break;
@@ -90,14 +105,14 @@ export default function App() {
           break;
 
         case "empty":
-          // const emptyMessage = untypedMessage as EmptyMessage;
           setState((prevState) => ({
             ...prevState,
             code: "",
-            htmlPreview: emptyPreview,
             warnings: [],
             colors: [],
             gradients: [],
+            zipExport: null,
+            statusMessage: "Select a frame to export ZIP + generate code",
             isLoading: false,
           }));
           break;
@@ -109,7 +124,9 @@ export default function App() {
             ...prevState,
             colors: [],
             gradients: [],
+            zipExport: null,
             code: `Error :(\n// ${errorMessage.error}`,
+            statusMessage: errorMessage.error,
             isLoading: false,
           }));
           break;
@@ -117,6 +134,7 @@ export default function App() {
         case "selection-json":
           const json = event.data.pluginMessage.data;
           copy(JSON.stringify(json, null, 2));
+          break;
 
         default:
           break;
@@ -136,7 +154,6 @@ export default function App() {
     if (updatedFramework !== state.selectedFramework) {
       setState((prevState) => ({
         ...prevState,
-        // code: "// Loading...",
         selectedFramework: updatedFramework,
       }));
       postUISettingsChangingMessage("framework", updatedFramework, {
@@ -168,10 +185,11 @@ export default function App() {
         selectedFramework={state.selectedFramework}
         setSelectedFramework={handleFrameworkChange}
         onPreferenceChanged={handlePreferencesChange}
-        htmlPreview={state.htmlPreview}
         settings={state.settings}
         colors={state.colors}
         gradients={state.gradients}
+        zipExport={state.zipExport}
+        statusMessage={state.statusMessage}
       />
     </div>
   );

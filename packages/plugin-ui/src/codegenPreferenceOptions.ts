@@ -48,8 +48,8 @@ export const preferenceOptions: LocalCodegenPreferenceOptions[] = [
     propertyName: "embedImages",
     label: "Embed Images",
     description:
-      "Convert Figma images to Base64 and embed them in the code. This may be slow. If there are too many images, it could freeze Figma.",
-    isDefault: false,
+      "Embed framed PNG assets from the ZIP export (scaleMode + effects baked). On by default.",
+    isDefault: true,
     includedLanguages: ["HTML"],
   },
   {
@@ -57,8 +57,8 @@ export const preferenceOptions: LocalCodegenPreferenceOptions[] = [
     propertyName: "embedVectors",
     label: "Embed Vectors",
     description:
-      "Enable this to convert vector shapes to SVGs and embed them in the design. This can be a slow operation. If unchecked, shapes will be converted into rectangles.",
-    isDefault: false,
+      "Embed SVG assets from the ZIP export (effects baked). On by default.",
+    isDefault: true,
     includedLanguages: ["HTML", "Tailwind"],
   },
 ];
