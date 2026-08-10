@@ -19,7 +19,7 @@ export interface TailwindSettings extends HTMLSettings {
   useTailwind4: boolean;
   thresholdPercent: number;
   baseFontFamily: string;
-  fontFamilyCustomConfig: Record<string, string[]>
+  fontFamilyCustomConfig: Record<string, string[]>;
 }
 export interface FlutterSettings {
   flutterGenerationMode: "fullApp" | "stateless" | "snippet";
@@ -31,7 +31,8 @@ export interface ComposeSettings {
   composeGenerationMode: "snippet" | "composable" | "screen";
 }
 export interface PluginSettings
-  extends HTMLSettings,
+  extends
+    HTMLSettings,
     TailwindSettings,
     FlutterSettings,
     SwiftUISettings,
@@ -44,10 +45,21 @@ export interface PluginSettings
 export interface ConversionData {
   code: string;
   settings: PluginSettings;
-  htmlPreview: HTMLPreview;
+  /** @deprecated Preview removed — kept optional for message compat */
+  htmlPreview?: HTMLPreview;
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
   warnings: Warning[];
+  /** Optional ZIP payload for UI download (base64 files) */
+  zipExport?: ZipExportPayload;
+}
+
+export interface ZipExportPayload {
+  folder: string;
+  /** Relative path → base64 */
+  files: Record<string, string>;
+  assetCount: number;
+  failedCount: number;
 }
 
 export type Warning = string;
@@ -60,7 +72,7 @@ export interface UIMessage {
   pluginMessage: Message;
 }
 export type EmptyMessage = Message & { type: "empty" };
-export type ConversionStartMessage = Message & { type: "conversionStarted" };
+export type ConversionStartMessage = Message & { type: "conversionStart" };
 export type ConversionMessage = Message & {
   type: "code";
 } & ConversionData;

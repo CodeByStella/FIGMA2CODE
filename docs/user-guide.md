@@ -27,7 +27,9 @@ You edit source  →  build/watch writes apps/plugin/dist/*
                       ↓
 Figma Desktop imports manifest.json  →  loads dist/code.js + dist/index.html
                       ↓
-User selects layers  →  code.js converts  →  postMessage  →  UI shows code
+User selects layers  →  code.js exports ZIP assets + converts
+                      ↓
+postMessage  →  UI shows code + Download ZIP (no HTML preview)
 ```
 
 Figma never “requests” `packages/backend`. The backend package is compiled into the plugin binary.
@@ -229,29 +231,32 @@ FigmaToCode/
 ├── packages/types/            # Shared TS types / messages
 ├── packages/tsconfig/
 ├── packages/eslint-config-custom/
-├── tools/figma-layout/        # Layout filter, rect viewer, JSON→HTML (reuses backend)
 └── docs/
+    ├── logic.md               # Pipeline, ZIP, messaging
+    └── user-guide.md          # This file
 ```
 
 ### `packages/backend` (library name is confusing)
 
 Means “plugin business logic,” **not** “server.”
 
-| Path                                                         | Role                                         |
-| ------------------------------------------------------------ | -------------------------------------------- |
-| `src/code.ts`                                                | Run conversion, limits, preview, reply to UI |
-| `src/altNodes/`                                              | Figma nodes → intermediate tree              |
-| `src/common/`                                                | Layout helpers + `convertToCode` router      |
-| `src/html/`, `tailwind/`, `flutter/`, `swiftui/`, `compose/` | Per-framework emitters                       |
-| `src/messaging.ts`                                           | `figma.ui.postMessage` helpers               |
+| Path                                                         | Role                                             |
+| ------------------------------------------------------------ | ------------------------------------------------ |
+| `src/code.ts`                                                | Orchestrate ZIP export + conversion; reply to UI |
+| `src/export/`                                                | `zipAssets`, `assetCache`, `applyAssetFlags`     |
+| `src/altNodes/`                                              | Figma nodes → intermediate tree                  |
+| `src/common/`                                                | Layout helpers + `convertToCode` router          |
+| `src/html/`, `tailwind/`, `flutter/`, `swiftui/`, `compose/` | Per-framework emitters                           |
+| `src/messaging.ts`                                           | `figma.ui.postMessage` helpers                   |
 
 ### `packages/plugin-ui`
 
-| Path                              | Role                                      |
-| --------------------------------- | ----------------------------------------- |
-| `src/PluginUI.tsx`                | Panel shell                               |
-| `src/components/`                 | Preview, code, colors, warnings, settings |
-| `src/codegenPreferenceOptions.ts` | Framework preference definitions          |
+| Path                              | Role                                          |
+| --------------------------------- | --------------------------------------------- |
+| `src/PluginUI.tsx`                | Panel shell (code + Download ZIP, no preview) |
+| `src/downloadZip.ts`              | Build/download ZIP from `zipExport` payload   |
+| `src/components/`                 | Code, colors, gradients, warnings, settings   |
+| `src/codegenPreferenceOptions.ts` | Framework preference definitions              |
 
 ### `apps/plugin`
 
@@ -273,3 +278,9 @@ A: Only the look of the UI. Not real Figma conversion.
 
 **Q: Watch is running but Figma still shows old behavior?**  
 A: Confirm `dist` timestamps updated, then **close and re-run** the development plugin.
+
+**Q: Where is the HTML preview?**  
+A: Removed. The panel shows generated code and **Download ZIP** so large frames stay usable.
+
+**Q: Does every run create a ZIP?**  
+A: In standard mode, `run()` exports assets and attaches `zipExport` to the `code` message. Dev Mode **codegen** generates code only (no ZIP).

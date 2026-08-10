@@ -13,25 +13,19 @@
 <a href="https://www.figma.com/community/plugin/842128343887142055"><img src="assets/badge.png" height="60"/></a>
 </p>
 
-Converting Figma designs into usable code can be a challenge, often requiring time-consuming manual work. Figma to Code simplifies that process. This plugin generates responsive layouts in `HTML`, `React (JSX)`, `Svelte`, `styled-components`, `Tailwind`, `Flutter`, and `SwiftUI` directly from your designs. Your feedback and ideas are always welcome.
-
-![Gif showing the conversion](assets/lossy_gif.gif)
+Converts Figma selections into `HTML`, `React (JSX)`, `Svelte`, `styled-components`, `Tailwind`, `Flutter`, and `SwiftUI`, and downloads a **ZIP** of the frame JSON plus all assets for offline accuracy.
 
 ## How it works
 
-The plugin uses a sophisticated multi-step process to transform your Figma designs into clean, optimized code:
+1. **Export assets** — Collect framed PNGs (IMAGE fills) and baked SVGs (vectors/shapes/icons). No node-count hard limit; progress is shown in the panel.
+2. **ZIP package** — `figma_raw.json` + `assets_map.json` + `assets/*` (**Download ZIP** in the UI).
+3. **AltNode conversion** — Auto Layout → flex; freeform → absolute. Asset bytes are reused for embeds (no second export). Effects baked into assets skip duplicate CSS `box-shadow`.
+4. **Code panel** — Framework code with images/vectors embedded by default. **No HTML preview** so large frames stay usable.
 
-1. **Node Conversion**: First, the plugin converts Figma's native nodes into JSON representations, preserving all necessary properties while adding optimizations and parent references.
+Docs:
 
-2. **Intermediate Representation**: The JSON nodes are then transformed into `AltNodes` - a custom virtual representation that can be manipulated without affecting your original design.
-
-3. **Layout Optimization**: The plugin analyzes and optimizes layouts, detecting patterns like auto-layouts, responsive constraints and color variables.
-
-4. **Code Generation**: Finally, the optimized structure is transformed into the target framework's code, with special handling for each framework's unique patterns and best practices. If a feature is unsupported, the plugin will provide a warning.
-
-![Conversion Workflow](assets/workflow.png)
-
-This intermediate representation approach allows for sophisticated transformations and optimizations before any code is generated, resulting in cleaner, more maintainable output.
+- [docs/logic.md](docs/logic.md) — pipeline, ZIP accuracy rules, messaging
+- [docs/user-guide.md](docs/user-guide.md) — build, import into Figma Desktop, debug consoles
 
 ## Hard cases
 
@@ -47,12 +41,6 @@ Converting visual designs to code inevitably encounters complex edge cases. Here
 
 **Tip**: Instead of selecting the whole page, you can also select individual items. This can be useful for both debugging and componentization. For example: you can use the plugin to generate the code of a single element and then replicate it using a for-loop.
 
-### Todo
-
-- Vectors (possible to enable in HTML and Tailwind)
-- Images (possible to enable to inline them in HTML and Tailwind)
-- Line/Star/Polygon
-
 ## How to build the project
 
 ### Package Manager
@@ -63,15 +51,16 @@ The project is configured for [pnpm](https://pnpm.io/). To install, see the [ins
 
 The plugin is organized as a monorepo. There are several packages:
 
-- `packages/backend` - Contains the business logic that reads the Figma API and converts nodes
-- `packages/plugin-ui` - Contains the common UI for the plugin
-- `packages/eslint-config-custom` - Config file for ESLint
-- `packages/tsconfig` - Collection of TSConfig files used throughout the project
+- `packages/backend` — Figma API → ZIP assets + AltNode conversion + framework codegen (`src/export/`, `src/altNodes/`, `src/html|tailwind|…`)
+- `packages/plugin-ui` — Shared React panel (code, Download ZIP, preferences)
+- `packages/types` — Shared settings and message types
+- `packages/eslint-config-custom` — ESLint config
+- `packages/tsconfig` — Shared TSConfig files
 
-- `apps/plugin` - This is the actual plugin assembled from the parts in `backend` & `plugin-ui`. Within this folder it's divided between:
-  - `plugin-src` - loads from `backend` and compiles to `code.js`
-  - `ui-src` - loads the common `plugin-ui` and compiles to `index.html`
-- `apps/debug` - This is a debug mode plugin that is a more convenient way to see all the UI elements.
+- `apps/plugin` — Plugin assembled from `backend` + `plugin-ui`:
+  - `plugin-src` — loads `backend`, compiles to `dist/code.js`
+  - `ui-src` — loads `plugin-ui`, compiles to `dist/index.html`
+- `apps/debug` — Next.js mock of the panel at `http://localhost:3000` (no real Figma conversion)
 
 ### Development Workflow
 

@@ -1,5 +1,4 @@
 import copy from "copy-to-clipboard";
-import Preview from "./components/Preview";
 import GradientsPanel from "./components/GradientsPanel";
 import ColorsPanel from "./components/ColorsPanel";
 import CodePanel from "./components/CodePanel";
@@ -8,11 +7,11 @@ import About from "./components/About";
 import WarningsPanel from "./components/WarningsPanel";
 import {
   Framework,
-  HTMLPreview,
-  LinearGradientConversion,
   PluginSettings,
+  LinearGradientConversion,
   SolidColorConversion,
   Warning,
+  ZipExportPayload,
 } from "types";
 import {
   preferenceOptions,
@@ -25,10 +24,10 @@ import React from "react";
 import { Button } from "./components/ui/button";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { downloadZipFromPayload } from "./downloadZip";
 
 type PluginUIProps = {
   code: string;
-  htmlPreview: HTMLPreview;
   warnings: Warning[];
   selectedFramework: Framework;
   setSelectedFramework: (framework: Framework) => void;
@@ -40,6 +39,8 @@ type PluginUIProps = {
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
   isLoading: boolean;
+  zipExport?: ZipExportPayload | null;
+  statusMessage?: string;
 };
 
 const frameworks: Framework[] = ["HTML", "Tailwind", "Flutter", "SwiftUI"];
@@ -89,14 +90,6 @@ export const PluginUI = (props: PluginUIProps) => {
   const [showLoading, setShowLoading] = useState(false);
   const [hasHandledInitialLoad, setHasHandledInitialLoad] = useState(false);
 
-  const [previewExpanded, setPreviewExpanded] = useState(false);
-  const [previewViewMode, setPreviewViewMode] = useState<
-    "desktop" | "mobile" | "precision"
-  >("precision");
-  const [previewBgColor, setPreviewBgColor] = useState<"white" | "black">(
-    "white",
-  );
-
   useEffect(() => {
     if (!props.isLoading) {
       setShowLoading(false);
@@ -109,14 +102,12 @@ export const PluginUI = (props: PluginUIProps) => {
       return;
     }
 
-    // On plugin startup, the UI waits for a ready handshake before the first conversion.
-    // Delay the loader only for that initial pass to avoid a one-frame loading flash.
     const timer = window.setTimeout(() => {
       setShowLoading(true);
     }, LOADING_INDICATOR_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [props.isLoading]);
+  }, [props.isLoading, hasHandledInitialLoad]);
 
   if (props.isLoading) return showLoading ? <Loading /> : null;
 
@@ -171,17 +162,24 @@ export const PluginUI = (props: PluginUIProps) => {
             </div>
           ) : (
             <div className="flex flex-col items-center px-4 pt-3 pb-2 gap-2 dark:bg-transparent">
-              {props.htmlPreview && (
-                <Preview
-                  htmlPreview={props.htmlPreview}
-                  expanded={previewExpanded}
-                  setExpanded={setPreviewExpanded}
-                  viewMode={previewViewMode}
-                  setViewMode={setPreviewViewMode}
-                  bgColor={previewBgColor}
-                  setBgColor={setPreviewBgColor}
-                />
-              )}
+              <div className="w-full flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {props.statusMessage ||
+                    "Export ZIP + generate code (no preview)"}
+                </p>
+                {props.zipExport && (
+                  <Button
+                    size="sm"
+                    className="h-8 shrink-0"
+                    onClick={() => downloadZipFromPayload(props.zipExport!)}
+                  >
+                    Download ZIP
+                    {props.zipExport.assetCount
+                      ? ` (${props.zipExport.assetCount})`
+                      : ""}
+                  </Button>
+                )}
+              </div>
 
               {warnings.length > 0 && <WarningsPanel warnings={warnings} />}
 

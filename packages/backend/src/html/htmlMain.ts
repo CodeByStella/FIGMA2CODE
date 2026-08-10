@@ -18,6 +18,8 @@ import {
   nodeHasImageFill,
 } from "../common/images";
 import { addWarning } from "../common/commonConversionWarnings";
+import { getCachedAsset } from "../export/assetCache";
+import { framedImageTransformCss } from "../export/applyAssetFlags";
 
 const selfClosingTags = ["img"];
 
@@ -386,6 +388,28 @@ const htmlWidgetGenerator = async (
 };
 
 const convertNode = (settings: HTMLSettings) => async (node: SceneNode) => {
+  // Prefer SVG from ZIP asset cache (vectors, icon instances, gradient text)
+  const cachedSvg = node.id ? getCachedAsset(node.id) : undefined;
+  if (
+    settings.embedVectors &&
+    cachedSvg?.format === "SVG" &&
+    ((node as any).canBeFlattened ||
+      node.type === "VECTOR" ||
+      node.type === "BOOLEAN_OPERATION" ||
+      node.type === "STAR" ||
+      node.type === "LINE" ||
+      node.type === "REGULAR_POLYGON" ||
+      node.type === "INSTANCE" ||
+      node.type === "COMPONENT" ||
+      node.type === "TEXT")
+  ) {
+    (node as any).canBeFlattened = true;
+    const altNode = await renderAndAttachSVG(node);
+    if (altNode.svg) {
+      return htmlWrapSVG(altNode, settings);
+    }
+  }
+
   if (settings.embedVectors && (node as any).canBeFlattened) {
     const altNode = await renderAndAttachSVG(node);
     if (altNode.svg) {
@@ -622,6 +646,22 @@ const htmlContainer = async (
       } else {
         tag = "img";
         src = ` src="${imgUrl}"`;
+        // Framed IMAGE PNGs were exported unrotated — re-apply CSS transform
+        if (
+          (node as any).imageAssetFramed ||
+          getCachedAsset(node.id)?.imageAssetFramed
+        ) {
+          const tx = framedImageTransformCss(node);
+          if (tx) {
+            builder.addStyles(
+              formatWithJSX(
+                "transform",
+                settings.htmlGenerationMode === "jsx",
+                tx,
+              ),
+            );
+          }
+        }
       }
     }
 

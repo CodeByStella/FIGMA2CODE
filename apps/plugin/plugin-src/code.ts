@@ -30,8 +30,8 @@ export const defaultPluginSettings: PluginSettings = {
   roundTailwindColors: true,
   useColorVariables: true,
   customTailwindPrefix: "",
-  embedImages: false,
-  embedVectors: false,
+  embedImages: true,
+  embedVectors: true,
   htmlGenerationMode: "html",
   tailwindGenerationMode: "jsx",
   baseFontSize: 16,
@@ -238,9 +238,9 @@ const standardMode = async () => {
 
       console.log(
         "[DEBUG] Exported node JSON:",
-        "json" in nodeJson
-          ? `jsonCount=${nodeJson.json?.length ?? 0}, newConversionCount=${nodeJson.newConversion?.length ?? 0}`
-          : nodeJson.message,
+        "message" in nodeJson
+          ? nodeJson.message
+          : `jsonCount=${nodeJson.json?.length ?? 0}, newConversionCount=${nodeJson.newConversion?.length ?? 0}`,
       );
       console.log("[selection-json]", JSON.stringify(nodeJson, null, 2));
 
@@ -265,7 +265,11 @@ const codegenMode = async () => {
         `[DEBUG] codegen.generate - Language: ${language}, Node: id=${node.id}, type=${node.type}`,
       );
 
-      const convertedSelection = await nodesToJSON([node], userPluginSettings);
+      // nodesToJSON returns REST API Node shapes; generators consume them as SceneNode-like trees.
+      const convertedSelection = (await nodesToJSON(
+        [node],
+        userPluginSettings,
+      )) as unknown as SceneNode[];
       console.log(
         "[DEBUG] codegen.generate - Converted selection count:",
         convertedSelection.length,
