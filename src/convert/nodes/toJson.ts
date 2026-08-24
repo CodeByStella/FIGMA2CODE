@@ -1,11 +1,10 @@
 import { addWarning } from "../warnings";
 import { withTimeout } from "../media/exportAsync";
-import { PluginSettings } from "types";
+import { PluginSettings, RestAltNode } from "types";
 import { variableToColorName } from "../color/variables";
-import { HasGeometryTrait, Node, Paint } from "../../api_types";
+import { HasGeometryTrait, Node, Paint } from "../../types/figma-rest";
 import { calculateRectangleFromBoundingBox } from "../layout/position";
 import { isLikelyIcon } from "./icons";
-import { AltNode } from "../../alt_api_types";
 
 // Performance tracking counters
 export let getNodeByIdAsyncTime = 0;
@@ -271,10 +270,10 @@ function adjustChildrenOrder(node: any) {
  * @returns Potentially modified jsonNode, array of nodes (for inlined groups), or null
  */
 const processNodePair = async (
-  jsonNode: AltNode,
+  jsonNode: RestAltNode,
   figmaNode: SceneNode,
   settings: PluginSettings,
-  parentNode?: AltNode,
+  parentNode?: RestAltNode,
   parentCumulativeRotation: number = 0,
 ): Promise<Node | Node[] | null> => {
   if (!jsonNode.id) return null;
@@ -325,7 +324,7 @@ const processNodePair = async (
       // Get visible JSON children (filters out nodes with visible: false)
       const visibleJsonChildren = jsonNode.children.filter(
         (child) => child.visible !== false,
-      ) as AltNode[];
+      ) as RestAltNode[];
 
       // Map figma children to their IDs for matching
       const figmaChildrenById = new Map();
@@ -566,7 +565,7 @@ const processNodePair = async (
     // Get only visible JSON children
     const visibleJsonChildren = jsonNode.children.filter(
       (child) => child.visible !== false,
-    ) as AltNode[];
+    ) as RestAltNode[];
 
     // Create a map of figma children by ID for easier matching
     const figmaChildrenById = new Map();

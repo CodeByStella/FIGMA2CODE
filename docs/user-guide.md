@@ -201,7 +201,7 @@ FigmaToCode/
 │   ├── ui/                    # Plugin panel
 │   ├── convert/               # Nodes + HTML + CSS
 │   ├── export/                # ZIP assets
-│   └── types.ts
+│   └── types/                 # Settings, messages, node types
 └── docs/
     ├── logic.md
     └── user-guide.md
@@ -215,6 +215,7 @@ FigmaToCode/
 | `convert/run.ts` | Preview HTML on selection; stream ZIP on download  |
 | `convert/`       | Nodes, layout, HTML + CSS emitter                  |
 | `export/`        | ZIP assets, cache, flags                           |
+| `types/`         | Settings, messages, plugin vs REST node types      |
 | `ui/`            | Panel: code, ZIP download, colors                  |
 | `messaging.ts`   | `figma.ui.postMessage` helpers                     |
 

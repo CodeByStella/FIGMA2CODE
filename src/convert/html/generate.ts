@@ -6,7 +6,7 @@ import { formatWithJSX } from "../css/format";
 import {
   PluginSettings,
   HTMLPreview,
-  AltNode,
+  PluginAltNode,
   HTMLSettings,
   ExportableNode,
 } from "types";
@@ -158,7 +158,7 @@ const convertNode = (settings: HTMLSettings) => async (node: SceneNode) => {
 };
 
 const htmlWrapSVG = (
-  node: AltNode<SceneNode>,
+  node: PluginAltNode<SceneNode>,
   settings: HTMLSettings,
 ): string => {
   if (node.svg === "") return "";
@@ -303,7 +303,7 @@ const htmlContainer = async (
     let src = "";
 
     if (nodeHasImageFill(node)) {
-      const altNode = node as AltNode<ExportableNode>;
+      const altNode = node as PluginAltNode<ExportableNode>;
       const hasChildren = "children" in node && node.children.length > 0;
       let imgUrl = "";
 

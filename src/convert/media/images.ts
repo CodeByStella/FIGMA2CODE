@@ -1,4 +1,4 @@
-import { AltNode, ExportableNode } from "types";
+import { PluginAltNode, ExportableNode } from "types";
 import { btoa } from "js-base64";
 import { addWarning } from "../warnings";
 import { exportAsyncProxy } from "./exportAsync";
@@ -84,7 +84,7 @@ const imageBytesToBase64 = (bytes: Uint8Array): string => {
 };
 
 export const exportNodeAsBase64PNG = async <T extends ExportableNode>(
-  node: AltNode<T>,
+  node: PluginAltNode<T>,
   excludeChildren: boolean,
   options?: { relativeAssetPaths?: boolean },
 ) => {

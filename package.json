@@ -4,7 +4,7 @@
   "packageManager": "pnpm@9.14.4",
   "scripts": {
     "build": "pnpm run build:ui && pnpm run build:main --minify --tree-shaking=true",
-    "build:main": "esbuild src/plugin.ts --bundle --target=ES6 --outfile=dist/code.js --alias:types=./src/types.ts",
+    "build:main": "esbuild src/plugin.ts --bundle --target=ES6 --outfile=dist/code.js --alias:types=./src/types/index.ts",
     "build:ui": "vite build --minify esbuild --emptyOutDir=false",
     "build:watch": "concurrently -n plugin,ui \"pnpm run build:main --watch\" \"pnpm run build:ui --watch\"",
     "dev": "pnpm build:watch",

@@ -1,4 +1,4 @@
-import { StyledTextSegmentSubset, ParentNode, AltNode } from "types";
+import { StyledTextSegmentSubset, ParentNode, PluginAltNode } from "types";
 import {
   assignParent,
   isNotEmpty,
@@ -144,7 +144,7 @@ export const cloneNode = <T extends BaseNode>(
     parent: cloned.parent,
     originalNode: node,
     canBeFlattened: canBeFlattened(node),
-  } as AltNode<T>;
+  } as PluginAltNode<T>;
 
   if (globalTextStyleSegments[node.id]) {
     altNode.styledTextSegments = globalTextStyleSegments[node.id];

@@ -1,4 +1,4 @@
-import { GradientPaint } from "../../api_types";
+import { GradientPaint } from "../../types/figma-rest";
 import { numberToFixedString } from "../css/numbers";
 
 // ---- Color Format Conversion ----

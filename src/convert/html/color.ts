@@ -1,6 +1,6 @@
 import { numberToFixedString } from "../css/numbers";
 import { retrieveTopFill } from "../color/fill";
-import { GradientPaint, Paint } from "../../api_types";
+import { GradientPaint, Paint } from "../../types/figma-rest";
 
 /**
  * Helper to process a color with variable binding if present

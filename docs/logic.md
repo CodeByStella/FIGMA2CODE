@@ -16,7 +16,7 @@ flowchart TB
 
   subgraph Source["src/"]
     Convert["convert / export"]
-    Types["types.ts"]
+    Types["types/"]
   end
 
   Canvas --> Sandbox
@@ -32,7 +32,7 @@ flowchart TB
 | `src/convert/`  | Node processing + HTML + CSS emitter                              |
 | `src/export/`   | Asset ZIP                                                         |
 | `src/ui/`       | Panel: code, ZIP download, colors                                 |
-| `src/types.ts`  | Shared `PluginSettings` and message contracts                     |
+| `src/types/`    | Shared `PluginSettings`, messages, and node types                 |
 
 ---
 
@@ -170,7 +170,7 @@ The panel shows **code + ZIP** only. `generateHTMLPreview` may still exist in `g
 
 ## Messaging contract
 
-UI and main thread talk over `postMessage`. Types live in `src/types.ts`.
+UI and main thread talk over `postMessage`. Types live in `src/types/`.
 
 ```mermaid
 sequenceDiagram
@@ -293,4 +293,4 @@ Warnings are accumulated in a module-level set (`src/convert/warnings.ts`) and r
 | Plugin → UI messages   | `src/messaging.ts`                           |
 | Panel + ZIP button     | `src/ui/PluginUI.tsx`                        |
 | ZIP download helper    | `src/ui/zip.ts`                              |
-| Types                  | `src/types.ts`                               |
+| Types                  | `src/types/`                                 |

@@ -1,4 +1,4 @@
-import { AltNode } from "types";
+import { PluginAltNode } from "types";
 import { curry } from "../../shared/curry";
 import { exportAsyncProxy } from "../media/exportAsync";
 import { addWarning } from "../warnings";
@@ -52,7 +52,7 @@ export const isTypeOrGroupOfTypes = curry(
 );
 
 export const isSVGNode = (node: SceneNode) => {
-  const altNode = node as AltNode<typeof node>;
+  const altNode = node as PluginAltNode<typeof node>;
   return altNode.canBeFlattened;
 };
 

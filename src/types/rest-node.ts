@@ -1,6 +1,7 @@
-import { type Node } from "./api_types";
+import { type Node } from "./figma-rest";
 
-export type AltNode = Node & {
+/** REST JSON_REST_V1 node after nodesToJSON enrichment. */
+export type RestAltNode = Node & {
   styledTextSegments: Array<
     Pick<StyledTextSegment, any | "characters" | "start" | "end">
   >;

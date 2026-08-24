@@ -14,7 +14,7 @@
     "ignoreDeprecations": "6.0",
     "resolveJsonModule": true,
     "paths": {
-      "types": ["./src/types.ts"]
+      "types": ["./src/types/index.ts"]
     },
     "typeRoots": ["./node_modules/@types", "./node_modules/@figma"]
   },
