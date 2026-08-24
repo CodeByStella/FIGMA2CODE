@@ -526,7 +526,11 @@ export class HtmlDefaultBuilder {
 
     const nodeName = (this.node as any).uniqueName || this.node.name;
 
-    const componentName = getComponentName(nodeName, this.cssClassName, element);
+    const componentName = getComponentName(
+      nodeName,
+      this.cssClassName,
+      element,
+    );
 
     cssCollection[this.cssClassName] = {
       styles: cssStyles,

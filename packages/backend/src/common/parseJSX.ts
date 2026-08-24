@@ -43,8 +43,10 @@ export const formatMultipleJSX = (
     .join(isJsx ? ", " : "; ");
 
 export const escapeJSXText = (text: string): string => {
-  return encode(text, { level: "html5" })
-    // process JSX curly braces
-    .replace(/\{/g, "&#123;")
-    .replace(/\}/g, "&#125;");
+  return (
+    encode(text, { level: "html5" })
+      // process JSX curly braces
+      .replace(/\{/g, "&#123;")
+      .replace(/\}/g, "&#125;")
+  );
 };

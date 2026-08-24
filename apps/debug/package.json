@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "build:watch": "next start",
-    "lint": "next lint"
+    "lint": "eslint \"app/**/*.{ts,tsx}\""
   },
   "dependencies": {
     "backend": "workspace:*",
@@ -21,6 +21,7 @@
     "@types/node": "^25.7.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "eslint": "^10.3.0",
     "eslint-config-custom": "workspace:*",
     "postcss": "^8.5.14",
     "tailwindcss": "4.3.0",

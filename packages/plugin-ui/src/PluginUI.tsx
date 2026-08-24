@@ -11,7 +11,6 @@ import {
   LinearGradientConversion,
   SolidColorConversion,
   Warning,
-  ZipExportPayload,
 } from "types";
 import {
   preferenceOptions,
@@ -24,7 +23,6 @@ import React from "react";
 import { Button } from "./components/ui/button";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { downloadZipFromPayload } from "./downloadZip";
 
 type PluginUIProps = {
   code: string;
@@ -39,8 +37,10 @@ type PluginUIProps = {
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
   isLoading: boolean;
-  zipExport?: ZipExportPayload | null;
+  isZipExporting?: boolean;
   statusMessage?: string;
+  progressPercent?: number | null;
+  onDownloadZip?: () => void;
 };
 
 const frameworks: Framework[] = ["HTML", "Tailwind", "Flutter", "SwiftUI"];
@@ -85,34 +85,94 @@ const FrameworkTabs = ({
   );
 };
 
+const ZipToolbar = ({
+  statusMessage,
+  progressPercent,
+  isLoading,
+  isZipExporting,
+  canDownloadZip,
+  onDownloadZip,
+}: {
+  statusMessage?: string;
+  progressPercent?: number | null;
+  isLoading: boolean;
+  isZipExporting: boolean;
+  canDownloadZip: boolean;
+  onDownloadZip?: () => void;
+}) => {
+  const busy = isLoading || isZipExporting;
+  const hasPercent =
+    typeof progressPercent === "number" &&
+    progressPercent >= 0 &&
+    Number.isFinite(progressPercent);
+
+  return (
+    <div className="w-full flex flex-col gap-2">
+      <div className="w-full flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground min-w-0 break-words">
+          {statusMessage ||
+            (canDownloadZip
+              ? "Code ready — click Download ZIP for index.html + assets"
+              : "Select a frame to generate code")}
+        </p>
+        <Button
+          size="sm"
+          className="h-8 shrink-0"
+          disabled={!canDownloadZip || busy || !onDownloadZip}
+          onClick={() => onDownloadZip?.()}
+        >
+          {isZipExporting ? "Exporting…" : "Download ZIP"}
+        </Button>
+      </div>
+      {isZipExporting && (
+        <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={`h-full rounded-full bg-primary transition-[width] duration-200 ease-out ${
+              hasPercent ? "" : "w-1/3 animate-pulse"
+            }`}
+            style={
+              hasPercent
+                ? {
+                    width: `${Math.max(0, Math.min(100, progressPercent!))}%`,
+                  }
+                : undefined
+            }
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const PluginUI = (props: PluginUIProps) => {
   const [showAbout, setShowAbout] = useState(false);
-  const [showLoading, setShowLoading] = useState(false);
-  const [hasHandledInitialLoad, setHasHandledInitialLoad] = useState(false);
+  const [hasBeenIdle, setHasBeenIdle] = useState(!props.isLoading);
+  const [delayElapsed, setDelayElapsed] = useState(false);
+
+  if (!props.isLoading && !hasBeenIdle) {
+    setHasBeenIdle(true);
+  }
+  if (!props.isLoading && delayElapsed) {
+    setDelayElapsed(false);
+  }
 
   useEffect(() => {
-    if (!props.isLoading) {
-      setShowLoading(false);
-      setHasHandledInitialLoad(true);
-      return;
-    }
-
-    if (hasHandledInitialLoad) {
-      setShowLoading(true);
+    if (!props.isLoading || hasBeenIdle) {
       return;
     }
 
     const timer = window.setTimeout(() => {
-      setShowLoading(true);
+      setDelayElapsed(true);
     }, LOADING_INDICATOR_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [props.isLoading, hasHandledInitialLoad]);
+  }, [props.isLoading, hasBeenIdle]);
 
-  if (props.isLoading) return showLoading ? <Loading /> : null;
-
-  const isEmpty = props.code === "";
+  const isEmpty = !props.isLoading && props.code === "";
   const warnings = props.warnings ?? [];
+  const showBodyLoading = props.isLoading && (hasBeenIdle || delayElapsed);
+  const canDownloadZip =
+    props.code !== "" && !props.code.startsWith("Error :(");
 
   return (
     <TooltipProvider>
@@ -156,62 +216,63 @@ export const PluginUI = (props: PluginUIProps) => {
               useOldPluginVersion={props.settings?.useOldPluginVersion2025}
               onPreferenceChanged={props.onPreferenceChanged}
             />
-          ) : isEmpty ? (
-            <div className="flex min-h-full items-center justify-center">
-              <EmptyState />
-            </div>
           ) : (
-            <div className="flex flex-col items-center px-4 pt-3 pb-2 gap-2 dark:bg-transparent">
-              <div className="w-full flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {props.statusMessage ||
-                    "Export ZIP + generate code (no preview)"}
-                </p>
-                {props.zipExport && (
-                  <Button
-                    size="sm"
-                    className="h-8 shrink-0"
-                    onClick={() => downloadZipFromPayload(props.zipExport!)}
-                  >
-                    Download ZIP
-                    {props.zipExport.assetCount
-                      ? ` (${props.zipExport.assetCount})`
-                      : ""}
-                  </Button>
-                )}
-              </div>
-
-              {warnings.length > 0 && <WarningsPanel warnings={warnings} />}
-
-              <CodePanel
-                code={props.code}
-                selectedFramework={props.selectedFramework}
-                preferenceOptions={preferenceOptions}
-                selectPreferenceOptions={selectPreferenceOptions}
-                settings={props.settings}
-                onPreferenceChanged={props.onPreferenceChanged}
+            <div className="flex flex-col items-center px-4 pt-3 pb-2 gap-2 dark:bg-transparent min-h-full">
+              <ZipToolbar
+                statusMessage={props.statusMessage}
+                progressPercent={props.progressPercent}
+                isLoading={props.isLoading}
+                isZipExporting={Boolean(props.isZipExporting)}
+                canDownloadZip={canDownloadZip}
+                onDownloadZip={props.onDownloadZip}
               />
 
-              {props.colors.length > 0 && (
-                <div className="mt-3 w-full">
-                  <ColorsPanel
-                    colors={props.colors}
-                    onColorClick={(value) => {
-                      copy(value);
-                    }}
+              {showBodyLoading ? (
+                <div className="flex flex-1 w-full items-center justify-center py-6">
+                  <Loading
+                    statusMessage={props.statusMessage}
+                    progressPercent={props.progressPercent}
                   />
                 </div>
-              )}
+              ) : isEmpty ? (
+                <div className="flex flex-1 w-full items-center justify-center">
+                  <EmptyState />
+                </div>
+              ) : (
+                <>
+                  {warnings.length > 0 && <WarningsPanel warnings={warnings} />}
 
-              {props.gradients.length > 0 && (
-                <div className="mt-3 w-full">
-                  <GradientsPanel
-                    gradients={props.gradients}
-                    onColorClick={(value) => {
-                      copy(value);
-                    }}
+                  <CodePanel
+                    code={props.code}
+                    selectedFramework={props.selectedFramework}
+                    preferenceOptions={preferenceOptions}
+                    selectPreferenceOptions={selectPreferenceOptions}
+                    settings={props.settings}
+                    onPreferenceChanged={props.onPreferenceChanged}
                   />
-                </div>
+
+                  {props.colors.length > 0 && (
+                    <div className="mt-3 w-full">
+                      <ColorsPanel
+                        colors={props.colors}
+                        onColorClick={(value) => {
+                          copy(value);
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {props.gradients.length > 0 && (
+                    <div className="mt-3 w-full">
+                      <GradientsPanel
+                        gradients={props.gradients}
+                        onColorClick={(value) => {
+                          copy(value);
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

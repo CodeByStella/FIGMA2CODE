@@ -3,17 +3,14 @@
   "private": true,
   "packageManager": "pnpm@9.14.4",
   "scripts": {
-    "build": "turbo run build",
-    "build:watch": "turbo run build:watch",
-    "dev": "turbo run dev --concurrency 20",
-    "lint": "turbo run lint",
+    "build": "pnpm --dir apps/plugin build",
+    "build:watch": "pnpm --dir apps/plugin build:watch",
+    "dev": "pnpm --dir apps/plugin dev",
+    "dev:debug": "pnpm --dir apps/debug dev",
+    "lint": "turbo run lint --log-order=grouped --output-logs=errors-only",
     "format": "prettier --write \"**/*.{ts,tsx,css,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,css,md,json}\"",
-    "prepare": "husky",
-    "layout:filter": "pnpm --dir tools/figma-layout filter",
-    "layout:html": "pnpm --dir tools/figma-layout html",
-    "layout:serve": "pnpm --dir tools/figma-layout serve",
-    "layout:test": "pnpm --dir tools/figma-layout test:layout"
+    "prepare": "husky"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,css,md,json}": [

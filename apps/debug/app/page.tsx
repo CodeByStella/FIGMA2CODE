@@ -39,6 +39,10 @@ export default function Web() {
                 colors={[]}
                 gradients={[]}
                 warnings={testWarnings}
+                statusMessage="Code ready — click Download ZIP for index.html + assets"
+                onDownloadZip={() => {
+                  console.log("[debug] Download ZIP clicked");
+                }}
               />
             </div>
           </div>
@@ -61,6 +65,10 @@ export default function Web() {
                 colors={[]}
                 gradients={[]}
                 warnings={testWarnings}
+                statusMessage="Code ready — click Download ZIP for index.html + assets"
+                onDownloadZip={() => {
+                  console.log("[debug] Download ZIP clicked");
+                }}
               />
             </div>
           </div>

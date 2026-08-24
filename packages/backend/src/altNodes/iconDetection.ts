@@ -6,24 +6,26 @@
 
 // --- Constants ---
 
-const ICON_PRIMITIVE_TYPES: ReadonlySet<NodeType> = new Set([
+const ICON_PRIMITIVE_TYPES: ReadonlySet<string> = new Set([
   "ELLIPSE",
   "RECTANGLE",
   "STAR",
   "POLYGON",
+  "REGULAR_POLYGON",
   "LINE",
-]); // Removed duplicate POLYGON
+]); // Plugin API: POLYGON; REST JSON: REGULAR_POLYGON
 
-const ICON_COMPLEX_VECTOR_TYPES: ReadonlySet<NodeType> = new Set([
+const ICON_COMPLEX_VECTOR_TYPES: ReadonlySet<string> = new Set([
   "VECTOR",
   "BOOLEAN_OPERATION",
 ]);
 
 // Types that are considered icons regardless of size if they are top-level
-const ICON_TYPES_IGNORE_SIZE: ReadonlySet<NodeType> = new Set([
+const ICON_TYPES_IGNORE_SIZE: ReadonlySet<string> = new Set([
   "VECTOR",
   "BOOLEAN_OPERATION",
   "POLYGON",
+  "REGULAR_POLYGON",
   "STAR",
 ]);
 

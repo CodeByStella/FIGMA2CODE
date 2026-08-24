@@ -170,7 +170,8 @@ const EmptyState = () => {
         Nothing selected
       </h3>
       <p className="mt-2 max-w-[280px] text-sm leading-5 text-neutral-600 dark:text-neutral-400">
-        Select a frame to export ZIP + generate code
+        Select a frame to generate code. Use Download ZIP for index.html +
+        assets.
       </p>
     </div>
   );

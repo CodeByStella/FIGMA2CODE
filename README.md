@@ -1,25 +1,14 @@
-<!-- <p align="center"><img src="assets/icon_256.png" alt="Figma to Code" height="128px"></p> -->
-
-[![Figma to Code](assets/git_preview.png)](https://www.figma.com/community/plugin/842128343887142055)
-
 # Figma to Code
 
-<p align="center">
-<a href="https://github.com/bernaferrari/FigmaToCode/actions/"><img src="https://github.com/bernaferrari/FigmaToCode/workflows/CI/badge.svg"/></a>
-<a href="https://codecov.io/gh/bernaferrari/FigmaToCode"><img src="https://codecov.io/gh/bernaferrari/FigmaToCode/branch/master/graph/badge.svg" /></a>
-<a href="http://twitter.com/bernaferrari">
-<img src="https://img.shields.io/badge/Twitter-@bernaferrari-brightgreen.svg?style=flat" alt="Twitter"/></a>
-</p><p align="center">
-<a href="https://www.figma.com/community/plugin/842128343887142055"><img src="assets/badge.png" height="60"/></a>
-</p>
+[CI](https://github.com/CodeByStella/FIGMA2CODE/actions) · [Figma Community plugin](https://www.figma.com/community/plugin/842128343887142055)
 
-Converts Figma selections into `HTML`, `React (JSX)`, `Svelte`, `styled-components`, `Tailwind`, `Flutter`, and `SwiftUI`, and downloads a **ZIP** of the frame JSON plus all assets for offline accuracy.
+Converts Figma selections into `HTML`, `React (JSX)`, `Svelte`, `styled-components`, `Tailwind`, `Flutter`, and `SwiftUI`, and downloads a **ZIP** with `index.html` (design preview) plus frame JSON and assets.
 
 ## How it works
 
-1. **Export assets** — Collect framed PNGs (IMAGE fills) and baked SVGs (vectors/shapes/icons). No node-count hard limit; progress is shown in the panel.
-2. **ZIP package** — `figma_raw.json` + `assets_map.json` + `assets/*` (**Download ZIP** in the UI).
-3. **AltNode conversion** — Auto Layout → flex; freeform → absolute. Asset bytes are reused for embeds (no second export). Effects baked into assets skip duplicate CSS `box-shadow`.
+1. **Code preview** — On selection, convert to framework code (no ZIP export yet).
+2. **Download ZIP** — On demand: framed PNGs + baked SVGs, `index.html`, `figma_raw.json`, `assets_map.json`, `assets/*`.
+3. **AltNode conversion** — Auto Layout → flex; freeform → absolute. ZIP download reuses accuracy rules (effects baked, etc.).
 4. **Code panel** — Framework code with images/vectors embedded by default. **No HTML preview** so large frames stay usable.
 
 Docs:
@@ -36,8 +25,6 @@ Converting visual designs to code inevitably encounters complex edge cases. Here
 2. **Color Variables**: The plugin detects and processes color variables, allowing for theme-consistent output.
 
 3. **Gradients and Effects**: Different frameworks handle gradients and effects in unique ways, requiring specialized conversion logic.
-
-![Conversion Workflow](assets/examples.png)
 
 **Tip**: Instead of selecting the whole page, you can also select individual items. This can be useful for both debugging and componentization. For example: you can use the plugin to generate the code of a single element and then replicate it using a for-loop.
 
@@ -57,10 +44,8 @@ The plugin is organized as a monorepo. There are several packages:
 - `packages/eslint-config-custom` — ESLint config
 - `packages/tsconfig` — Shared TSConfig files
 
-- `apps/plugin` — Plugin assembled from `backend` + `plugin-ui`:
-  - `plugin-src` — loads `backend`, compiles to `dist/code.js`
-  - `ui-src` — loads `plugin-ui`, compiles to `dist/index.html`
-- `apps/debug` — Next.js mock of the panel at `http://localhost:3000` (no real Figma conversion)
+- `apps/plugin` — Plugin assembled from `backend` + `plugin-ui` into root `dist/`
+- `apps/debug` — Optional Next.js mock of the panel (`pnpm dev:debug`)
 
 ### Development Workflow
 
@@ -68,24 +53,17 @@ The project uses [Turborepo](https://turborepo.com/) for managing the monorepo, 
 
 #### Running the Project
 
-You have two main options for development:
+```bash
+pnpm dev
+```
 
-1. **Root development mode** (includes debug UI):
+Watches source and rebuilds root `dist/` (`code.js`, `index.html`, `manifest.json`). Import root `manifest.json` in Figma Desktop, then re-run the plugin after each rebuild.
 
-   ```bash
-   pnpm dev
-   ```
+Optional mock panel (no Figma conversion):
 
-   This runs the plugin in dev mode and also starts a Next.js server for the debug UI. You can access the debug UI at `http://localhost:3000`.
-
-2. **Plugin-only development mode**:
-
-   ```bash
-   cd apps/plugin
-   pnpm dev
-   ```
-
-   This focuses only on the plugin without the Next.js debug UI. Use this when you're making changes specifically to the plugin.
+```bash
+pnpm dev:debug
+```
 
 #### Where to Make Changes
 
@@ -101,17 +79,12 @@ You'll rarely need to modify files directly in the `apps/` directory, as they mo
 
 `pnpm run ...`
 
-- `dev` - runs the app in dev mode. This can be run in the Figma editor.
-- `build` - builds the project for production
-- `build:watch` - builds and watches for changes
+- `dev` - watch and rebuild root `dist/` for Figma
+- `build` - production compile into root `dist/` (copy this folder to publish)
+- `build:watch` - same as `dev`
+- `dev:debug` - Next.js mock UI at `http://localhost:3000`
 - `lint` - runs ESLint
 - `format` - formats with prettier (warning: may edit files!)
-
-#### Debug mode
-
-When running the `dev` task, you can open `http://localhost:3000` to see the debug version of the UI.
-
-<img width="600" alt="Screenshot 2024-12-13 at 16 26 43" src="https://github.com/user-attachments/assets/427fb066-70e1-47bd-8718-51f7f4d83e35" />
 
 ## Issues
 

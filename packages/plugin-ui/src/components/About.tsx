@@ -118,7 +118,7 @@ const About = ({
               reports, and feature requests are welcome!
             </p>
             <a
-              href="https://github.com/bernaferrari/figmatocode"
+              href="https://github.com/CodeByStella/FIGMA2CODE"
               target="_blank"
               rel="noopener noreferrer"
               className={cn(
@@ -183,7 +183,7 @@ const About = ({
             </p>
             <div className="space-y-2">
               <a
-                href="https://github.com/bernaferrari/figmato-code/issues"
+                href="https://github.com/CodeByStella/FIGMA2CODE/issues"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 text-green-600 dark:text-green-400 hover:underline"
