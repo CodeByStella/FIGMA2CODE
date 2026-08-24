@@ -34,22 +34,16 @@ Converting visual designs to code inevitably encounters complex edge cases. Here
 
 The project is configured for [pnpm](https://pnpm.io/). To install, see the [installation notes for pnpm](https://pnpm.io/installation).
 
-### Monorepo
+### Repository layout
 
-The plugin is organized as a monorepo. There are several packages:
-
-- `packages/backend` — Figma API → ZIP assets + AltNode conversion + framework codegen (`src/export/`, `src/altNodes/`, `src/html|tailwind|…`)
-- `packages/plugin-ui` — Shared React panel (code, Download ZIP, preferences)
-- `packages/types` — Shared settings and message types
-- `packages/eslint-config-custom` — ESLint config
-- `packages/tsconfig` — Shared TSConfig files
-
-- `apps/plugin` — Plugin assembled from `backend` + `plugin-ui` into root `dist/`
-- `apps/debug` — Optional Next.js mock of the panel (`pnpm dev:debug`)
+```text
+src/plugin.ts     Figma main thread → dist/code.js
+src/ui/           Plugin panel → dist/index.html
+src/convert/      Nodes + HTML + CSS conversion
+src/export/       ZIP assets
+```
 
 ### Development Workflow
-
-The project uses [Turborepo](https://turborepo.com/) for managing the monorepo, and each package is compiled using [esbuild](https://esbuild.github.io/) for fast development cycles. Only modified files are recompiled when changes are made, making the development process more efficient.
 
 #### Running the Project
 
@@ -57,23 +51,11 @@ The project uses [Turborepo](https://turborepo.com/) for managing the monorepo, 
 pnpm dev
 ```
 
-Watches source and rebuilds root `dist/` (`code.js`, `index.html`, `manifest.json`). Import root `manifest.json` in Figma Desktop, then re-run the plugin after each rebuild.
-
-Optional mock panel (no Figma conversion):
-
-```bash
-pnpm dev:debug
-```
+Watches source and rebuilds root `dist/` (`code.js`, `index.html`). Import root `manifest.json` in Figma Desktop, then re-run the plugin after each rebuild.
 
 #### Where to Make Changes
 
-Most of your development work will happen in these directories:
-
-- `packages/backend` - For plugin backend
-- `packages/plugin-ui` - For plugin UI
-- `apps/plugin/` - The main plugin result that combines the backend and UI and is called by Figma.
-
-You'll rarely need to modify files directly in the `apps/` directory, as they mostly contain build configuration.
+Most work happens in `src/`: `plugin.ts` (Figma entry), `convert/` + `export/` (conversion), `ui/` (panel).
 
 #### Commands
 
@@ -82,7 +64,6 @@ You'll rarely need to modify files directly in the `apps/` directory, as they mo
 - `dev` - watch and rebuild root `dist/` for Figma
 - `build` - production compile into root `dist/` (copy this folder to publish)
 - `build:watch` - same as `dev`
-- `dev:debug` - Next.js mock UI at `http://localhost:3000`
 - `lint` - runs ESLint
 - `format` - formats with prettier (warning: may edit files!)
 
