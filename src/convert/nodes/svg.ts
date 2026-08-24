@@ -1,4 +1,4 @@
-import { AltNode } from "types";
+import { PluginAltNode } from "types";
 import { curry } from "../../shared/curry";
 import { exportAsyncProxy } from "../media/exportAsync";
 import { addWarning } from "../warnings";
@@ -52,7 +52,7 @@ export const isTypeOrGroupOfTypes = curry(
 );
 
 export const isSVGNode = (node: SceneNode) => {
-  const altNode = node as AltNode<typeof node>;
+  const altNode = node as PluginAltNode<typeof node>;
   return altNode.canBeFlattened;
 };
 
@@ -64,7 +64,7 @@ export const renderAndAttachSVG = async (node: any) => {
 
     // Prefer SVG from ZIP asset cache (effects baked)
     const cached = node.id ? getCachedAsset(node.id) : undefined;
-    if (cached && cached.format === "SVG") {
+    if (cached && cached.format === "SVG" && cached.bytes) {
       try {
         node.svg = utf8Decode(cached.bytes);
         return node;

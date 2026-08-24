@@ -201,7 +201,7 @@ FigmaToCode/
 │   ├── ui/                    # Plugin panel
 │   ├── convert/               # Nodes + HTML + CSS
 │   ├── export/                # ZIP assets
-│   └── types.ts
+│   └── types/                 # Settings, messages, node types
 └── docs/
     ├── logic.md
     └── user-guide.md
@@ -212,9 +212,10 @@ FigmaToCode/
 | Path             | Role                                               |
 | ---------------- | -------------------------------------------------- |
 | `plugin.ts`      | Figma modes, settings storage, selection listeners |
-| `convert/run.ts` | Orchestrate ZIP export + conversion; reply to UI   |
+| `convert/run.ts` | Preview HTML on selection; stream ZIP on download  |
 | `convert/`       | Nodes, layout, HTML + CSS emitter                  |
 | `export/`        | ZIP assets, cache, flags                           |
+| `types/`         | Settings, messages, plugin vs REST node types      |
 | `ui/`            | Panel: code, ZIP download, colors                  |
 | `messaging.ts`   | `figma.ui.postMessage` helpers                     |
 
@@ -232,4 +233,4 @@ A: Confirm `dist` timestamps updated, then **close and re-run** the development 
 A: Removed. The panel shows generated code and **Download ZIP** so large frames stay usable.
 
 **Q: Does every run create a ZIP?**  
-A: In standard mode, `run()` exports assets and attaches `zipExport` to the `code` message. Dev Mode **codegen** generates code only (no ZIP).
+A: No. Selection changes generate HTML + CSS only (a short snippet in the panel). **Download ZIP** exports assets and streams files to the browser. Dev Mode **codegen** generates code only (no ZIP).

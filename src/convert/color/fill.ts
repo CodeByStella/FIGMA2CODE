@@ -1,4 +1,4 @@
-import { Paint } from "../../api_types";
+import { Paint } from "../../types/figma-rest";
 
 /**
  * Retrieve the first visible color that is being used by the layer, in case there are more than one.

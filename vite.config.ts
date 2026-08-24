@@ -14,7 +14,7 @@ export default defineConfig({
   plugins: [react(), viteSingleFile()],
   resolve: {
     alias: {
-      types: path.resolve(repoRoot, "src/types.ts"),
+      types: path.resolve(repoRoot, "src/types/index.ts"),
     },
   },
   server: {

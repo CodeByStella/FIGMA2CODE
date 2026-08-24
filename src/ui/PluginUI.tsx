@@ -21,6 +21,8 @@ import { TooltipProvider } from "./primitives/tooltip";
 
 type PluginUIProps = {
   code: string;
+  lineCount: number;
+  showingFullCode: boolean;
   warnings: Warning[];
   settings: PluginSettings | null;
   onPreferenceChanged: (
@@ -34,6 +36,8 @@ type PluginUIProps = {
   statusMessage?: string;
   progressPercent?: number | null;
   onDownloadZip?: () => void;
+  onCopyFullCode?: () => void;
+  onShowFullCode?: () => void;
 };
 
 const LOADING_INDICATOR_DELAY_MS = 250;
@@ -62,7 +66,7 @@ const ZipToolbar = ({
   return (
     <div className="w-full flex flex-col gap-2">
       <div className="w-full flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground min-w-0 break-words">
+        <p className="text-xs text-muted-foreground min-w-0 wrap-break-word">
           {statusMessage ||
             (canDownloadZip
               ? "Download ZIP for index.html + assets"
@@ -191,7 +195,13 @@ export const PluginUI = (props: PluginUIProps) => {
                 <>
                   {warnings.length > 0 && <WarningsPanel warnings={warnings} />}
 
-                  <CodePanel code={props.code} />
+                  <CodePanel
+                    code={props.code}
+                    lineCount={props.lineCount}
+                    showingFullCode={props.showingFullCode}
+                    onCopyFullCode={props.onCopyFullCode}
+                    onShowFullCode={props.onShowFullCode}
+                  />
 
                   {props.colors.length > 0 && (
                     <div className="mt-3 w-full">

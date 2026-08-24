@@ -1,10 +1,12 @@
-import type { ZipExportPayload } from "types";
-
-function b64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+export function coerceIncomingBytes(data: unknown): Uint8Array | null {
+  if (!data) return null;
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  if (Array.isArray(data)) return new Uint8Array(data);
+  return null;
 }
 
 function strToBytes(s: string): Uint8Array {
@@ -134,17 +136,22 @@ function sanitizeFolder(name: string): string {
     .slice(0, 60);
 }
 
-/** Build CRC-32 store ZIP and trigger browser download. */
-export function downloadZipFromPayload(payload: ZipExportPayload): void {
+/** Build CRC-32 store ZIP from streamed files and trigger download. */
+export function downloadZipFromFiles(
+  folder: string,
+  filesByPath: Map<string, Uint8Array | ArrayBuffer>,
+): void {
   const files: { name: string; data: Uint8Array }[] = [];
-  for (const [name, b64] of Object.entries(payload.files)) {
-    files.push({ name: name.replace(/\\/g, "/"), data: b64ToBytes(b64) });
+  for (const [name, data] of filesByPath) {
+    const bytes = coerceIncomingBytes(data);
+    if (bytes) {
+      files.push({ name: name.replace(/\\/g, "/"), data: bytes });
+    }
   }
-  const folder = sanitizeFolder(payload.folder) || "export";
   const blob = buildStoreZip(files);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `${folder}.zip`;
+  a.download = `${sanitizeFolder(folder) || "export"}.zip`;
   a.click();
   URL.revokeObjectURL(a.href);
 }

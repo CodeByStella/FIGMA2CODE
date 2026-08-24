@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PluginUI } from "./PluginUI";
-import { downloadZipFromPayload } from "./zip";
+import { coerceIncomingBytes, downloadZipFromFiles } from "./zip";
 import {
   PluginSettings,
   ConversionMessage,
@@ -10,23 +10,27 @@ import {
   ErrorMessage,
   SettingsChangedMessage,
   Warning,
-  ZipExportPayload,
   ProgressMessage,
-  ZipReadyMessage,
+  ZipDoneMessage,
+  ZipFileMessage,
   ZipErrorMessage,
+  FullCodeMessage,
 } from "types";
 import { postUISettingsChangingMessage } from "./messaging";
 import copy from "copy-to-clipboard";
 
 interface AppState {
-  code: string;
+  codePreview: string;
+  lineCount: number;
+  codeBytes: number;
+  displayedCode: string;
+  showingFullCode: boolean;
   isLoading: boolean;
   isZipExporting: boolean;
   settings: PluginSettings | null;
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
   warnings: Warning[];
-  zipExport: ZipExportPayload | null;
   statusMessage: string;
   progressPercent: number | null;
 }
@@ -44,15 +48,19 @@ const isDarkFigmaBackground = (background: string) => {
 };
 
 export default function App() {
+  const zipFilesRef = useRef<Map<string, Uint8Array>>(new Map());
   const [state, setState] = useState<AppState>({
-    code: "",
+    codePreview: "",
+    lineCount: 0,
+    codeBytes: 0,
+    displayedCode: "",
+    showingFullCode: false,
     isLoading: true,
     isZipExporting: false,
     settings: null,
     colors: [],
     gradients: [],
     warnings: [],
-    zipExport: null,
     statusMessage: "",
     progressPercent: null,
   });
@@ -65,14 +73,22 @@ export default function App() {
   useEffect(() => {
     window.onmessage = (event: MessageEvent) => {
       const untypedMessage = event.data.pluginMessage as Message;
-      console.log("[ui] message received:", untypedMessage);
+      if (!untypedMessage?.type) return;
+
+      if (untypedMessage.type !== "zipFile" && untypedMessage.type !== "code") {
+        console.log("[ui] message:", untypedMessage.type);
+      }
 
       switch (untypedMessage.type) {
         case "conversionStart":
+          zipFilesRef.current.clear();
           setState((prevState) => ({
             ...prevState,
-            code: "",
-            zipExport: null,
+            codePreview: "",
+            displayedCode: "",
+            lineCount: 0,
+            codeBytes: 0,
+            showingFullCode: false,
             statusMessage: "Generating code…",
             progressPercent: null,
             isLoading: true,
@@ -89,7 +105,6 @@ export default function App() {
               typeof progress.percent === "number"
                 ? progress.percent
                 : prevState.progressPercent,
-            // Progress during ZIP export should not flip the code-loading view
             isLoading: prevState.isZipExporting ? prevState.isLoading : true,
           }));
           break;
@@ -100,7 +115,8 @@ export default function App() {
           setState((prevState) => ({
             ...prevState,
             ...conversionMessage,
-            zipExport: null,
+            displayedCode: conversionMessage.codePreview,
+            showingFullCode: false,
             statusMessage: "Download ZIP for index.html + assets",
             progressPercent: null,
             isLoading: false,
@@ -110,6 +126,7 @@ export default function App() {
         }
 
         case "zipStart":
+          zipFilesRef.current.clear();
           setState((prevState) => ({
             ...prevState,
             statusMessage: "Exporting ZIP assets…",
@@ -118,18 +135,26 @@ export default function App() {
           }));
           break;
 
-        case "zipReady": {
-          const ready = untypedMessage as ZipReadyMessage;
-          const zipExport = ready.zipExport;
+        case "zipFile": {
+          const file = untypedMessage as ZipFileMessage;
+          const bytes = coerceIncomingBytes(file.bytes);
+          if (file.path && bytes) {
+            zipFilesRef.current.set(file.path, bytes);
+          }
+          break;
+        }
+
+        case "zipDone": {
+          const done = untypedMessage as ZipDoneMessage;
+          const files = zipFilesRef.current;
           setState((prevState) => ({
             ...prevState,
-            zipExport,
-            statusMessage: `Downloaded — index.html + ${zipExport.assetCount} assets`,
+            statusMessage: `Downloaded — index.html + ${done.assetCount} assets`,
             progressPercent: 100,
             isZipExporting: false,
           }));
           try {
-            downloadZipFromPayload(zipExport);
+            downloadZipFromFiles(done.folder, files);
           } catch (err) {
             console.error("[ui] ZIP download failed", err);
             setState((prevState) => ({
@@ -137,16 +162,32 @@ export default function App() {
               statusMessage: "ZIP built but browser download failed",
             }));
           }
+          zipFilesRef.current = new Map();
           break;
         }
 
         case "zipError": {
           const zipErr = untypedMessage as ZipErrorMessage;
+          zipFilesRef.current.clear();
           setState((prevState) => ({
             ...prevState,
             isZipExporting: false,
             progressPercent: null,
             statusMessage: zipErr.error || "ZIP export failed",
+          }));
+          break;
+        }
+
+        case "fullCode": {
+          const full = untypedMessage as FullCodeMessage;
+          if (full.purpose === "copy") {
+            copy(full.code);
+            break;
+          }
+          setState((prevState) => ({
+            ...prevState,
+            displayedCode: full.code,
+            showingFullCode: true,
           }));
           break;
         }
@@ -160,13 +201,17 @@ export default function App() {
           break;
 
         case "empty":
+          zipFilesRef.current.clear();
           setState((prevState) => ({
             ...prevState,
-            code: "",
+            codePreview: "",
+            displayedCode: "",
+            lineCount: 0,
+            codeBytes: 0,
+            showingFullCode: false,
             warnings: [],
             colors: [],
             gradients: [],
-            zipExport: null,
             statusMessage: "Select a frame to generate code",
             progressPercent: null,
             isLoading: false,
@@ -176,13 +221,16 @@ export default function App() {
 
         case "error":
           const errorMessage = untypedMessage as ErrorMessage;
-
+          zipFilesRef.current.clear();
           setState((prevState) => ({
             ...prevState,
             colors: [],
             gradients: [],
-            zipExport: null,
-            code: `Error :(\n// ${errorMessage.error}`,
+            codePreview: `Error :(\n// ${errorMessage.error}`,
+            displayedCode: `Error :(\n// ${errorMessage.error}`,
+            lineCount: 2,
+            codeBytes: 0,
+            showingFullCode: false,
             statusMessage: errorMessage.error,
             progressPercent: null,
             isLoading: false,
@@ -200,8 +248,7 @@ export default function App() {
           break;
 
         case "selection-json":
-          const json = event.data.pluginMessage.data;
-          copy(JSON.stringify(json, null, 2));
+          copy(JSON.stringify(event.data.pluginMessage.data, null, 2));
           break;
 
         default:
@@ -234,6 +281,13 @@ export default function App() {
     parent.postMessage({ pluginMessage: { type: "exportZip" } }, "*");
   };
 
+  const requestFullCode = (purpose: "copy" | "display") => {
+    parent.postMessage(
+      { pluginMessage: { type: "requestFullCode", purpose } },
+      "*",
+    );
+  };
+
   const darkMode = isDarkFigmaBackground(figmaColorBgValue);
 
   return (
@@ -243,7 +297,9 @@ export default function App() {
       <PluginUI
         isLoading={state.isLoading}
         isZipExporting={state.isZipExporting}
-        code={state.code}
+        code={state.displayedCode}
+        lineCount={state.lineCount}
+        showingFullCode={state.showingFullCode}
         warnings={state.warnings}
         onPreferenceChanged={handlePreferencesChange}
         settings={state.settings}
@@ -252,6 +308,8 @@ export default function App() {
         statusMessage={state.statusMessage}
         progressPercent={state.progressPercent}
         onDownloadZip={handleDownloadZip}
+        onCopyFullCode={() => requestFullCode("copy")}
+        onShowFullCode={() => requestFullCode("display")}
       />
     </div>
   );
