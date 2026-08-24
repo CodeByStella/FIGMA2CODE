@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { PluginUI } from "plugin-ui";
+import { PluginUI, downloadZipFromPayload } from "plugin-ui";
 import {
   Framework,
   PluginSettings,
@@ -11,6 +11,9 @@ import {
   SettingsChangedMessage,
   Warning,
   ZipExportPayload,
+  ProgressMessage,
+  ZipReadyMessage,
+  ZipErrorMessage,
 } from "types";
 import { postUISettingsChangingMessage } from "./messaging";
 import copy from "copy-to-clipboard";
@@ -19,12 +22,14 @@ interface AppState {
   code: string;
   selectedFramework: Framework;
   isLoading: boolean;
+  isZipExporting: boolean;
   settings: PluginSettings | null;
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
   warnings: Warning[];
   zipExport: ZipExportPayload | null;
   statusMessage: string;
+  progressPercent: number | null;
 }
 
 const isDarkFigmaBackground = (background: string) => {
@@ -44,12 +49,14 @@ export default function App() {
     code: "",
     selectedFramework: "HTML",
     isLoading: true,
+    isZipExporting: false,
     settings: null,
     colors: [],
     gradients: [],
     warnings: [],
     zipExport: null,
     statusMessage: "",
+    progressPercent: null,
   });
 
   const rootStyles = getComputedStyle(document.documentElement);
@@ -68,32 +75,85 @@ export default function App() {
             ...prevState,
             code: "",
             zipExport: null,
-            statusMessage: "Starting…",
+            statusMessage: "Generating code…",
+            progressPercent: null,
             isLoading: true,
+            isZipExporting: false,
           }));
           break;
 
-        case "progress":
+        case "progress": {
+          const progress = untypedMessage as ProgressMessage;
           setState((prevState) => ({
             ...prevState,
-            statusMessage: (untypedMessage as any).message || "",
-            isLoading: true,
+            statusMessage: progress.message || prevState.statusMessage,
+            progressPercent:
+              typeof progress.percent === "number"
+                ? progress.percent
+                : prevState.progressPercent,
+            // Progress during ZIP export should not flip the code-loading view
+            isLoading: prevState.isZipExporting ? prevState.isLoading : true,
           }));
           break;
+        }
 
-        case "code":
+        case "code": {
           const conversionMessage = untypedMessage as ConversionMessage;
           setState((prevState) => ({
             ...prevState,
             ...conversionMessage,
-            zipExport: conversionMessage.zipExport || null,
+            zipExport: null,
             selectedFramework: conversionMessage.settings.framework,
-            statusMessage: conversionMessage.zipExport
-              ? `Ready — ${conversionMessage.zipExport.assetCount} assets in ZIP`
-              : "Ready",
+            statusMessage:
+              "Code ready — click Download ZIP for index.html + assets",
+            progressPercent: null,
             isLoading: false,
+            isZipExporting: false,
           }));
           break;
+        }
+
+        case "zipStart":
+          setState((prevState) => ({
+            ...prevState,
+            statusMessage: "Exporting ZIP assets…",
+            progressPercent: 0,
+            isZipExporting: true,
+          }));
+          break;
+
+        case "zipReady": {
+          const ready = untypedMessage as ZipReadyMessage;
+          const zipExport = ready.zipExport;
+          setState((prevState) => ({
+            ...prevState,
+            zipExport,
+            statusMessage: `Downloaded — index.html + ${zipExport.assetCount} assets`,
+            progressPercent: 100,
+            isZipExporting: false,
+          }));
+          try {
+            downloadZipFromPayload(zipExport);
+          } catch (err) {
+            console.error("[ui] ZIP download failed", err);
+            setState((prevState) => ({
+              ...prevState,
+              statusMessage: "ZIP built but browser download failed",
+            }));
+          }
+          break;
+        }
+
+        case "zipError": {
+          const zipErr = untypedMessage as ZipErrorMessage;
+          setState((prevState) => ({
+            ...prevState,
+            isZipExporting: false,
+            progressPercent: null,
+            statusMessage: zipErr.error || "ZIP export failed",
+          }));
+          break;
+        }
 
         case "pluginSettingsChanged":
           const settingsMessage = untypedMessage as SettingsChangedMessage;
@@ -112,8 +172,10 @@ export default function App() {
             colors: [],
             gradients: [],
             zipExport: null,
-            statusMessage: "Select a frame to export ZIP + generate code",
+            statusMessage: "Select a frame to generate code",
+            progressPercent: null,
             isLoading: false,
+            isZipExporting: false,
           }));
           break;
 
@@ -127,7 +189,9 @@ export default function App() {
             zipExport: null,
             code: `Error :(\n// ${errorMessage.error}`,
             statusMessage: errorMessage.error,
+            progressPercent: null,
             isLoading: false,
+            isZipExporting: false,
           }));
           break;
 
@@ -172,6 +236,11 @@ export default function App() {
     }
   };
 
+  const handleDownloadZip = () => {
+    if (state.isLoading || state.isZipExporting) return;
+    parent.postMessage({ pluginMessage: { type: "exportZip" } }, "*");
+  };
+
   const darkMode = isDarkFigmaBackground(figmaColorBgValue);
 
   return (
@@ -180,6 +249,7 @@ export default function App() {
     >
       <PluginUI
         isLoading={state.isLoading}
+        isZipExporting={state.isZipExporting}
         code={state.code}
         warnings={state.warnings}
         selectedFramework={state.selectedFramework}
@@ -188,8 +258,9 @@ export default function App() {
         settings={state.settings}
         colors={state.colors}
         gradients={state.gradients}
-        zipExport={state.zipExport}
         statusMessage={state.statusMessage}
+        progressPercent={state.progressPercent}
+        onDownloadZip={handleDownloadZip}
       />
     </div>
   );

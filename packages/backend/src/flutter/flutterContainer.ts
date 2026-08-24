@@ -64,7 +64,7 @@ export const flutterContainer = (node: SceneNode, child: string): string => {
       "BoxDecoration()",
     );
     properties.decoration = clipBehavior ? propBoxDecoration : parsedDecoration;
-    
+
     const isEmptyProps = hasEmptyProps(properties);
     if (isEmptyProps) {
       result = child;
@@ -110,7 +110,7 @@ const hasEmptyProps = (props: Record<string, string>): boolean => {
     isEmpty = isEmpty && skipDefaultProperty(value, defValue).length == 0;
   }
   return isEmpty;
-}
+};
 
 const getDecoration = (node: SceneNode): string => {
   if (!("fills" in node)) {

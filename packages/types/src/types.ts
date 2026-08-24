@@ -7,6 +7,11 @@ export interface HTMLSettings {
   embedVectors: boolean;
   useColorVariables: boolean;
   htmlGenerationMode: "html" | "jsx" | "styled-components" | "svelte";
+  /**
+   * When true, image/SVG URLs use relative paths from the ZIP asset cache
+   * (e.g. `assets/foo.png`) instead of data URLs. Used for `index.html` in the ZIP.
+   */
+  relativeAssetPaths?: boolean;
 }
 export interface TailwindSettings extends HTMLSettings {
   tailwindGenerationMode: "html" | "jsx" | "twig";
@@ -73,6 +78,11 @@ export interface UIMessage {
 }
 export type EmptyMessage = Message & { type: "empty" };
 export type ConversionStartMessage = Message & { type: "conversionStart" };
+export type ProgressMessage = Message & {
+  type: "progress";
+  message: string;
+  percent?: number;
+};
 export type ConversionMessage = Message & {
   type: "code";
 } & ConversionData;
@@ -89,6 +99,17 @@ export type ErrorMessage = Message & {
   type: "error";
   error: string;
 };
+export type ZipStartMessage = Message & { type: "zipStart" };
+export type ZipReadyMessage = Message & {
+  type: "zipReady";
+  zipExport: ZipExportPayload;
+};
+export type ZipErrorMessage = Message & {
+  type: "zipError";
+  error: string;
+};
+/** UI → plugin: build and return ZIP payload */
+export type ExportZipMessage = Message & { type: "exportZip" };
 
 // Nodes
 export type ParentNode = BaseNode & ChildrenMixin;

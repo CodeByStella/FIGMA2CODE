@@ -1,6 +1,7 @@
 import { tailwindCodeGenTextStyles } from "./../../../packages/backend/src/tailwind/tailwindMain";
 import {
   run,
+  exportZipPackage,
   flutterMain,
   tailwindMain,
   swiftuiMain,
@@ -83,51 +84,69 @@ const initSettings = async () => {
   safeRun(userPluginSettings);
 };
 
-// Used to prevent running from happening again.
-let isLoading = false;
+// Used to prevent overlapping preview / ZIP work (also blocks documentchange loops).
+let isBusy = false;
 const safeRun = async (settings: PluginSettings) => {
   console.log(
-    "[DEBUG] safeRun - Called with isLoading =",
-    isLoading,
+    "[DEBUG] safeRun - Called with isBusy =",
+    isBusy,
     "selectionCount =",
     figma.currentPage.selection.length,
   );
-  if (isLoading === false) {
-    try {
-      isLoading = true;
-      console.log("[DEBUG] safeRun - Starting run execution");
-      await run(settings);
-      console.log("[DEBUG] safeRun - Run execution completed");
-      // hack to make it not immediately set to false when complete. (executes on next frame)
-      setTimeout(() => {
-        console.log("[DEBUG] safeRun - Resetting isLoading to false");
-        isLoading = false;
-      }, 1);
-    } catch (e) {
-      console.log("[DEBUG] safeRun - Error caught in execution");
-      isLoading = false; // Make sure to reset the flag on error
-      if (e && typeof e === "object" && "message" in e) {
-        const error = e as Error;
-        console.log("error: ", error.stack);
-        figma.ui.postMessage({ type: "error", error: error.message });
-      } else {
-        // Handle non-standard errors or unknown error types
-        const errorMessage = String(e);
-        console.log("Unknown error: ", errorMessage);
-        figma.ui.postMessage({
-          type: "error",
-          error: errorMessage || "Unknown error occurred",
-        });
-      }
-
-      // Send a message to reset the UI state
-      figma.ui.postMessage({ type: "conversion-complete", success: false });
+  if (isBusy) {
+    console.log("[DEBUG] safeRun - Skipping because isBusy");
+    return;
+  }
+  try {
+    isBusy = true;
+    console.log("[DEBUG] safeRun - Starting run execution");
+    await run(settings);
+    console.log("[DEBUG] safeRun - Run execution completed");
+  } catch (e) {
+    console.log("[DEBUG] safeRun - Error caught in execution");
+    if (e && typeof e === "object" && "message" in e) {
+      const error = e as Error;
+      console.log("error: ", error.stack);
+      figma.ui.postMessage({ type: "error", error: error.message });
+    } else {
+      const errorMessage = String(e);
+      console.log("Unknown error: ", errorMessage);
+      figma.ui.postMessage({
+        type: "error",
+        error: errorMessage || "Unknown error occurred",
+      });
     }
-  } else {
-    console.log(
-      "[DEBUG] safeRun - Skipping execution because isLoading =",
-      isLoading,
-    );
+    figma.ui.postMessage({ type: "conversion-complete", success: false });
+  } finally {
+    // Next frame so temporary visibility toggles during export don't re-enter.
+    setTimeout(() => {
+      isBusy = false;
+    }, 1);
+  }
+};
+
+const safeExportZip = async (settings: PluginSettings) => {
+  if (isBusy) {
+    figma.ui.postMessage({
+      type: "zipError",
+      error: "Busy generating code — try Download ZIP again in a moment",
+    });
+    return;
+  }
+  try {
+    isBusy = true;
+    await exportZipPackage(settings);
+  } catch (e) {
+    const errorMessage =
+      e && typeof e === "object" && "message" in e
+        ? String((e as Error).message)
+        : String(e || "ZIP export failed");
+    console.error("[safeExportZip]", e);
+    figma.ui.postMessage({ type: "zipError", error: errorMessage });
+  } finally {
+    setTimeout(() => {
+      isBusy = false;
+    }, 1);
   }
 };
 
@@ -213,7 +232,7 @@ const standardMode = async () => {
     // Node: This was causing an infinite load when you try to export a background image from a group that contains children.
     // The reason for this is that the code will temporarily hide the children of the group in order to export a clean image
     // then restores the visibility of the children. This constitutes a document change so it's restarting the whole conversion.
-    // In order to stop this, we disable safeRun() when doing conversions (while isLoading === true).
+    // In order to stop this, we disable safeRun() when busy (isBusy === true).
     safeRun(userPluginSettings);
   });
 
@@ -231,6 +250,8 @@ const standardMode = async () => {
       (userPluginSettings as any)[key] = value;
       figma.clientStorage.setAsync("userPluginSettings", userPluginSettings);
       safeRun(userPluginSettings);
+    } else if (msg.type === "exportZip") {
+      await safeExportZip(userPluginSettings);
     } else if (msg.type === "get-selection-json") {
       console.log("[DEBUG] get-selection-json message received");
 

@@ -4,7 +4,7 @@ Next.js host that mounts `packages/plugin-ui` with **mock** conversion data. Use
 
 ```bash
 # from repo root
-pnpm dev
+pnpm dev:debug
 ```
 
 Open [http://localhost:3000](http://localhost:3000).

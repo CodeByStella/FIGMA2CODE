@@ -4,8 +4,8 @@ This repo is a **Figma plugin**, not a website with a server.
 
 Figma loads two local files from disk (see `manifest.json`):
 
-- `apps/plugin/dist/code.js` — runs inside Figma’s plugin sandbox (can read the document)
-- `apps/plugin/dist/index.html` — UI iframe shown in the plugin panel
+- `dist/code.js` — runs inside Figma’s plugin sandbox (can read the document)
+- `dist/index.html` — UI iframe shown in the plugin panel
 
 There is **no URL** Figma calls for conversion. Everything runs inside Figma after those files are built.
 
@@ -15,15 +15,15 @@ Conversion details: [Logic](./logic.md).
 
 ## Mental model (read this first)
 
-| Name in the repo     | What it actually is                                                | Has a URL?                                                 |
-| -------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `packages/backend`   | TypeScript library: Figma nodes → code. Bundled **into** `code.js` | **No.** Not a server.                                      |
-| `packages/plugin-ui` | React UI components. Bundled **into** `index.html`                 | **No.**                                                    |
-| `apps/plugin`        | Build entry that produces `dist/code.js` + `dist/index.html`       | **No.**                                                    |
-| `apps/debug`         | Optional Next.js page to preview the UI with **fake** data         | Yes: `http://localhost:3000` only while you run `pnpm dev` |
+| Name in the repo     | What it actually is                                                | Has a URL?                                                       |
+| -------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `packages/backend`   | TypeScript library: Figma nodes → code. Bundled **into** `code.js` | **No.** Not a server.                                            |
+| `packages/plugin-ui` | React UI components. Bundled **into** `index.html`                 | **No.**                                                          |
+| `apps/plugin`        | Build entry that writes root `dist/code.js` + `dist/index.html`    | **No.**                                                          |
+| `apps/debug`         | Optional Next.js page to preview the UI with **fake** data         | Yes: `http://localhost:3000` only while you run `pnpm dev:debug` |
 
 ```text
-You edit source  →  build/watch writes apps/plugin/dist/*
+You edit source  →  build/watch writes dist/*
                       ↓
 Figma Desktop imports manifest.json  →  loads dist/code.js + dist/index.html
                       ↓
@@ -40,26 +40,24 @@ Figma never “requests” `packages/backend`. The backend package is compiled i
 
 **To test the real plugin (selection → real code): yes, both.**
 
-1. Keep a build/watch running so `apps/plugin/dist/` updates.
+1. Keep a build/watch running so root `dist/` updates.
 2. Import the plugin once in **Figma Desktop**.
 3. Run the development plugin from Figma’s Plugins menu.
 
 **`http://localhost:3000` is optional.** It only helps you style/layout the React UI without opening Figma. It cannot read your Figma file and does not talk to any backend URL.
 
-| What you want                         | What to run                                    | Open where                          |
-| ------------------------------------- | ---------------------------------------------- | ----------------------------------- |
-| Real conversion from a Figma file     | `pnpm dev` **or** `cd apps/plugin && pnpm dev` | **Figma Desktop** (imported plugin) |
-| Tweak UI layout/colors with mock data | root `pnpm dev` (starts debug app too)         | Browser `http://localhost:3000`     |
-| One-off production build              | `pnpm build`                                   | Then run plugin in Figma            |
+| What you want                         | What to run      | Open where                          |
+| ------------------------------------- | ---------------- | ----------------------------------- |
+| Real conversion from a Figma file     | `pnpm dev`       | **Figma Desktop** (imported plugin) |
+| Tweak UI layout/colors with mock data | `pnpm dev:debug` | Browser `http://localhost:3000`     |
+| One-off production build              | `pnpm build`     | Copy root `dist/` to publish        |
 
 Recommended for day-to-day plugin work:
 
 ```bash
 pnpm install
-cd apps/plugin && pnpm dev    # watches and rebuilds dist only
+pnpm dev    # watches and rebuilds root dist/
 ```
-
-Use root `pnpm dev` if you also want the debug UI on port 3000.
 
 ---
 
@@ -70,8 +68,8 @@ Use root `pnpm dev` if you also want the debug UI on port 3000.
 ### Exact clicks
 
 1. Build or watch so these exist:
-   - `apps/plugin/dist/code.js`
-   - `apps/plugin/dist/index.html`
+   - `dist/code.js`
+   - `dist/index.html`
 2. Open **Figma Desktop** and open **any design file** (not just the home/file browser — a canvas file).
 3. Top-left: click the **Figma logo** / **☰ menu** (not the right-side Resources panel).
 4. Go to **Plugins → Development**.
@@ -142,7 +140,7 @@ Logs from React UI code.
 
 ### Auto-build to `dist`?
 
-**Yes**, while `pnpm dev` / `apps/plugin` `pnpm dev` is running:
+**Yes**, while `pnpm dev` is running:
 
 - Main thread: esbuild `--watch` → updates `dist/code.js`
 - UI: Vite build `--watch` → updates `dist/index.html`
@@ -171,19 +169,19 @@ UI-only tweaks sometimes pick up after re-opening the plugin; main-thread (`back
 - Not shipped to Figma Community.
 - Not used by the imported desktop plugin.
 
-The desktop plugin UI is the built `apps/plugin/dist/index.html`, not localhost.
+The desktop plugin UI is the built `dist/index.html`, not localhost.
 
 ---
 
 ## Develop — commands
 
-| Command                      | Effect                                         |
-| ---------------------------- | ---------------------------------------------- |
-| `pnpm install`               | Install deps; runs Husky `prepare`             |
-| `cd apps/plugin && pnpm dev` | Watch → rebuild `dist/` (enough for Figma)     |
-| `pnpm dev`                   | Same plugin watch **plus** debug UI on `:3000` |
-| `pnpm build`                 | Production build of packages/apps              |
-| `pnpm lint` / `pnpm format`  | Lint / format                                  |
+| Command                     | Effect                                         |
+| --------------------------- | ---------------------------------------------- |
+| `pnpm install`              | Install deps; runs Husky `prepare`             |
+| `pnpm dev`                  | Watch → rebuild root `dist/` for Figma         |
+| `pnpm dev:debug`            | Mock panel UI on `:3000` (no Figma conversion) |
+| `pnpm build`                | Production compile into root `dist/`           |
+| `pnpm lint` / `pnpm format` | Lint / format                                  |
 
 ### Where to edit
 
@@ -205,10 +203,13 @@ Still not a web deploy. You publish **built files** Figma hosts as a plugin.
 pnpm build
 ```
 
-Ship / upload using root `manifest.json` pointing at:
+Copy the root `dist/` folder. It contains:
 
-- `apps/plugin/dist/code.js`
-- `apps/plugin/dist/index.html`
+- `code.js`
+- `index.html`
+- `manifest.json` (`main` / `ui` already point at those files)
+
+Local Figma Desktop import still uses the repo-root `manifest.json` (`dist/code.js`, `dist/index.html`).
 
 Validate in Figma Desktop with the Development import, then publish a new version on [Figma Community](https://www.figma.com/community) for plugin id `842128343887142055`.
 
@@ -220,12 +221,12 @@ Validate in Figma Desktop with the Development import, then publish a new versio
 
 ```text
 FigmaToCode/
-├── manifest.json              # Tells Figma where dist files are
+├── manifest.json              # Local Figma import (points at dist/)
+├── dist/                      # OUTPUT: code.js, index.html, publish manifest
 ├── apps/plugin/
 │   ├── plugin-src/            # Plugin main entry (bundles backend)
-│   ├── ui-src/                # UI entry (bundles plugin-ui)
-│   └── dist/                  # OUTPUT Figma loads (gitignored build)
-├── apps/debug/                # Optional UI playground → localhost:3000
+│   └── ui-src/                # UI entry (bundles plugin-ui)
+├── apps/debug/                # Optional UI playground → pnpm dev:debug
 ├── packages/backend/          # Conversion library (NOT an HTTP API)
 ├── packages/plugin-ui/        # Shared React panel UI
 ├── packages/types/            # Shared TS types / messages
@@ -264,7 +265,6 @@ Means “plugin business logic,” **not** “server.”
 | -------------------- | -------------------------------------------------- |
 | `plugin-src/code.ts` | Figma modes, settings storage, selection listeners |
 | `ui-src/`            | Mounts `plugin-ui` in the iframe                   |
-| `dist/`              | Built artifacts Figma reads                        |
 
 ---
 

@@ -10,8 +10,15 @@
     },
     "lint": {
       "outputs": [],
+      "outputLogs": "errors-only",
       "dependsOn": ["^build"],
-      "inputs": ["src/**/*.tsx", "src/**/*.ts", "test/**/*.ts", "test/**/*.tsx", ".eslintrc.js"]
+      "inputs": [
+        "src/**/*.tsx",
+        "src/**/*.ts",
+        "test/**/*.ts",
+        "test/**/*.tsx",
+        ".eslintrc.js"
+      ]
     },
     "type-check": {}
   }

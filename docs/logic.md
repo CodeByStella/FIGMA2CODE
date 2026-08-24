@@ -71,24 +71,29 @@ Core orchestration lives in `packages/backend/src/code.ts` (`run`).
 flowchart TD
   A["run(settings)"] --> B{"selection empty?"}
   B -->|yes| Empty["postEmptyMessage"]
-  B -->|no| Force["force embedImages + embedVectors"]
-  Force --> Zip["exportZipAssets → PNG/SVG + assets_map + cache"]
-  Zip --> Conv["nodesToJSON + applyAssetFlagsToTree"]
-  Conv --> Code["convertToCode"]
-  Code --> Colors["retrieve colors and gradients"]
-  Colors --> Done["postConversionComplete + zipExport"]
+  B -->|no| Conv["nodesToJSON + convertToCode"]
+  Conv --> Colors["retrieve colors and gradients"]
+  Colors --> Done["postConversionComplete (code only)"]
+
+  Z["UI: Download ZIP"] --> Zip["exportZipPackage"]
+  Zip --> Assets["exportZipAssets → PNG/SVG + map"]
+  Assets --> Html["buildZipIndexHtml"]
+  Html --> Ready["post zipReady → browser download"]
 ```
 
-There is **no node-count hard abort** and **no HTML preview** in the panel. Large selections export assets (progress messages) then generate code.
+Selection / settings changes run **code preview only**. Asset export and ZIP packaging run **only when the user clicks Download ZIP**.
 
 ### ZIP package
 
 ```text
 export.zip
+  index.html          # Static HTML preview (relative asset URLs)
   figma_raw.json      # REST-shaped tree for offline use
   assets_map.json     # node id → asset path + flags
   assets/*.{svg,png}
 ```
+
+Open `index.html` after extracting the ZIP to view a design-faithful HTML render that loads images/SVGs from `assets/`.
 
 Accuracy rules (ported for fidelity):
 
@@ -268,7 +273,7 @@ flowchart LR
   Manifest --> Figma["Figma loads plugin"]
 ```
 
-Turborepo + esbuild/Vite assemble the plugin; Figma only loads the built `apps/plugin/dist` artifacts referenced by `manifest.json`.
+esbuild/Vite assemble the plugin into root `dist/`; Figma only loads those artifacts referenced by `manifest.json`.
 
 ---
 

@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "pnpm run build:ui && pnpm run build:main --minify --tree-shaking=true",
-    "build:main": "esbuild plugin-src/code.ts --bundle --target=ES6 --outfile=dist/code.js",
+    "build": "pnpm run build:ui && pnpm run build:main --minify --tree-shaking=true && pnpm run build:manifest",
+    "build:main": "esbuild plugin-src/code.ts --bundle --target=ES6 --outfile=../../dist/code.js",
     "build:ui": "vite build --minify esbuild --emptyOutDir=false",
-    "build:watch": "concurrently -n backend,ui \"pnpm run build:main --watch\" \"pnpm run build:ui --watch\"",
+    "build:manifest": "node ./scripts/write-dist-manifest.mjs",
+    "build:watch": "pnpm run build:manifest && concurrently -n backend,ui \"pnpm run build:main --watch\" \"pnpm run build:ui --watch\"",
     "dev": "pnpm build:watch"
   },
   "dependencies": {

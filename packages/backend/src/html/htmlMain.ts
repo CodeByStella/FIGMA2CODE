@@ -398,12 +398,17 @@ const convertNode = (settings: HTMLSettings) => async (node: SceneNode) => {
       node.type === "BOOLEAN_OPERATION" ||
       node.type === "STAR" ||
       node.type === "LINE" ||
+      node.type === "POLYGON" ||
       node.type === "REGULAR_POLYGON" ||
       node.type === "INSTANCE" ||
       node.type === "COMPONENT" ||
       node.type === "TEXT")
   ) {
     (node as any).canBeFlattened = true;
+    // ZIP static HTML: reference assets/*.svg instead of inlining
+    if (settings.relativeAssetPaths && cachedSvg.path) {
+      return htmlWrapSVGFile(node, settings, cachedSvg.path);
+    }
     const altNode = await renderAndAttachSVG(node);
     if (altNode.svg) {
       return htmlWrapSVG(altNode, settings);
@@ -411,6 +416,9 @@ const convertNode = (settings: HTMLSettings) => async (node: SceneNode) => {
   }
 
   if (settings.embedVectors && (node as any).canBeFlattened) {
+    if (settings.relativeAssetPaths && cachedSvg?.path) {
+      return htmlWrapSVGFile(node, settings, cachedSvg.path);
+    }
     const altNode = await renderAndAttachSVG(node);
     if (altNode.svg) {
       return htmlWrapSVG(altNode, settings);
@@ -436,8 +444,12 @@ const convertNode = (settings: HTMLSettings) => async (node: SceneNode) => {
     case "LINE":
       return htmlLine(node, settings);
     case "VECTOR":
+    case "STAR":
+    case "POLYGON":
+    case "REGULAR_POLYGON":
+    case "BOOLEAN_OPERATION":
       if (!settings.embedVectors && !isPreviewGlobal) {
-        addWarning("Vector is not supported");
+        addWarning(`${node.type} is not supported without Embed Vectors`);
       }
       return await htmlContainer(
         { ...node, type: "RECTANGLE" } as any,
@@ -466,6 +478,31 @@ const htmlWrapSVG = (
   // if the variables aren't defined in the CSS.
 
   return `\n<div${builder.build()}>\n${indentString(node.svg ?? "")}</div>`;
+};
+
+/** Reference a baked SVG file from the ZIP assets folder (static index.html). */
+const htmlWrapSVGFile = (
+  node: SceneNode,
+  settings: HTMLSettings,
+  assetPath: string,
+): string => {
+  const builder = new HtmlDefaultBuilder(node, settings)
+    .addData("svg-wrapper")
+    .commonPositionStyles();
+
+  const tx = framedImageTransformCss(node);
+  const extra: string[] = [];
+  if (tx) {
+    extra.push(
+      formatWithJSX("transform", settings.htmlGenerationMode === "jsx", tx),
+    );
+  }
+  // Preserve layout box for replaced element
+  extra.push(
+    formatWithJSX("display", settings.htmlGenerationMode === "jsx", "block"),
+  );
+
+  return `\n<img${builder.build(extra)} src="${assetPath}" alt="" />`;
 };
 
 const htmlGroup = async (
@@ -630,7 +667,10 @@ const htmlContainer = async (
         settings.embedImages &&
         (settings as PluginSettings).framework === "HTML"
       ) {
-        imgUrl = (await exportNodeAsBase64PNG(altNode, hasChildren)) ?? "";
+        imgUrl =
+          (await exportNodeAsBase64PNG(altNode, hasChildren, {
+            relativeAssetPaths: settings.relativeAssetPaths,
+          })) ?? "";
       } else {
         imgUrl = getPlaceholderImage(node.width, node.height);
       }

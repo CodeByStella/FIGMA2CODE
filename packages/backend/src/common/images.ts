@@ -86,17 +86,25 @@ const imageBytesToBase64 = (bytes: Uint8Array): string => {
 export const exportNodeAsBase64PNG = async <T extends ExportableNode>(
   node: AltNode<T>,
   excludeChildren: boolean,
+  options?: { relativeAssetPaths?: boolean },
 ) => {
-  // Shorcut export if the node has already been converted.
-  if (node.base64 !== undefined && node.base64 !== "") {
-    return node.base64;
-  }
-
   // Prefer bytes from ZIP asset export (framed PNG / accurate bake)
   const cached = node.id ? getCachedAsset(node.id) : undefined;
   if (cached && cached.format !== "SVG") {
+    if (options?.relativeAssetPaths && cached.path) {
+      return cached.path;
+    }
+    // Shortcut export if the node has already been converted.
+    if (node.base64 !== undefined && node.base64 !== "") {
+      return node.base64;
+    }
     node.base64 = cached.dataUrl;
     return cached.dataUrl;
+  }
+
+  // Shortcut export if the node has already been converted.
+  if (node.base64 !== undefined && node.base64 !== "") {
+    return node.base64;
   }
 
   const n: ExportableNode = node;

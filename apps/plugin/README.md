@@ -1,21 +1,28 @@
 # Figma plugin app
 
-Assembles `packages/backend` + `packages/plugin-ui` into the files Figma loads:
+Assembles `packages/backend` + `packages/plugin-ui` into the repo-root `dist/` folder Figma loads:
 
 - `dist/code.js` — main thread (conversion + ZIP export)
 - `dist/index.html` — plugin panel UI
+- `dist/manifest.json` — publish-ready copy (`main` / `ui` are `code.js` and `index.html`)
 
 ## Develop
 
-From this folder:
+From the repo root:
 
 ```bash
 pnpm dev
 ```
 
-Or from the repo root: `pnpm dev` (also starts the debug UI on `:3000`).
-
 Import root `manifest.json` in **Figma Desktop** → Plugins → Development. See [docs/user-guide.md](../../docs/user-guide.md).
+
+## Publish
+
+```bash
+pnpm build
+```
+
+Copy the root `dist/` folder. It is self-contained.
 
 ## Docs
 

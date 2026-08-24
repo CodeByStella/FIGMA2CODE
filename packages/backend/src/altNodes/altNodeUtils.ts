@@ -5,6 +5,7 @@ import { addWarning } from "../common/commonConversionWarnings";
 import { getVariableNameFromColor } from "./jsonNodeConversion";
 import { htmlColor } from "../html/builderImpl/htmlColor";
 import { getCachedAsset } from "../export/assetCache";
+import { utf8Decode } from "../common/utf8";
 
 export const overrideReadonlyProperty = curry(
   <T, K extends keyof T>(prop: K, value: any, obj: T): T =>
@@ -65,8 +66,7 @@ export const renderAndAttachSVG = async (node: any) => {
     const cached = node.id ? getCachedAsset(node.id) : undefined;
     if (cached && cached.format === "SVG") {
       try {
-        const text = new TextDecoder().decode(cached.bytes);
-        node.svg = text;
+        node.svg = utf8Decode(cached.bytes);
         return node;
       } catch {
         /* fall through to exportAsync */

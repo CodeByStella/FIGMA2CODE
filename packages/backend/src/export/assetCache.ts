@@ -35,6 +35,10 @@ export function getCachedAsset(nodeId: string): CachedAsset | undefined {
   return cacheByNodeId.get(nodeId);
 }
 
+export function getAllCachedAssets(): ReadonlyMap<string, CachedAsset> {
+  return cacheByNodeId;
+}
+
 export function hasAssetCache(): boolean {
   return cacheByNodeId.size > 0;
 }

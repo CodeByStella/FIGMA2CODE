@@ -59,7 +59,10 @@ export class TailwindDefaultBuilder {
   }
 
   get isTwigComponent() {
-    return this.settings.tailwindGenerationMode === "twig" && this.node.type === "INSTANCE"
+    return (
+      this.settings.tailwindGenerationMode === "twig" &&
+      this.node.type === "INSTANCE"
+    );
   }
 
   constructor(node: SceneNode, settings: TailwindSettings) {
@@ -281,7 +284,11 @@ export class TailwindDefaultBuilder {
     if ("componentProperties" in this.node && this.node.componentProperties) {
       Object.entries(this.node.componentProperties)
         ?.map((prop) => {
-          if (prop[1].type === "VARIANT" || prop[1].type === "BOOLEAN" || (this.isTwigComponent && prop[1].type === "TEXT")) {
+          if (
+            prop[1].type === "VARIANT" ||
+            prop[1].type === "BOOLEAN" ||
+            (this.isTwigComponent && prop[1].type === "TEXT")
+          ) {
             const cleanName = prop[0]
               .split("#")[0]
               .replace(/\s+/g, "-")

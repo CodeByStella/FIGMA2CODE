@@ -9,6 +9,7 @@ import {
   setAssetCache,
   uint8ToBase64,
 } from "./assetCache";
+import { utf8Encode } from "../common/utf8";
 import { postBackendMessage } from "../messaging";
 
 const VECTOR_TYPES = new Set([
@@ -16,6 +17,8 @@ const VECTOR_TYPES = new Set([
   "BOOLEAN_OPERATION",
   "STAR",
   "LINE",
+  // Plugin API uses POLYGON; REST / JSON_REST_V1 uses REGULAR_POLYGON
+  "POLYGON",
   "REGULAR_POLYGON",
 ]);
 
@@ -643,10 +646,10 @@ export async function exportZipAssets(
 
   const files: Record<string, string> = {
     "figma_raw.json": uint8ToBase64(
-      new TextEncoder().encode(JSON.stringify(annotated, null, 2) + "\n"),
+      utf8Encode(JSON.stringify(annotated, null, 2) + "\n"),
     ),
     "assets_map.json": uint8ToBase64(
-      new TextEncoder().encode(JSON.stringify(assetsMap, null, 2) + "\n"),
+      utf8Encode(JSON.stringify(assetsMap, null, 2) + "\n"),
     ),
     ...assetsB64,
   };
