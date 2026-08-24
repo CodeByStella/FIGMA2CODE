@@ -146,9 +146,7 @@ const About = ({
                 <div className="mt-1.5">
                   <ArrowRightIcon size={12} />
                 </div>
-                <span>
-                  Convert Figma designs to HTML, Tailwind, Flutter, and SwiftUI
-                </span>
+                <span>Convert Figma designs to HTML and CSS</span>
               </li>
               <li className="flex items-start gap-2">
                 <div className="mt-1.5">

@@ -1,8 +1,4 @@
-import {
-  formatMultipleJSX,
-  formatWithJSX,
-  escapeJSXText,
-} from "../common/parseJSX";
+import { formatMultipleJSX, formatWithJSX } from "../common/parseJSX";
 import { HtmlDefaultBuilder } from "./htmlDefaultBuilder";
 import { htmlColorFromFills } from "./builderImpl/htmlColor";
 import {
@@ -10,12 +6,6 @@ import {
   commonLineHeight,
 } from "../common/commonTextHeightSpacing";
 import { HTMLSettings, StyledTextSegmentSubset } from "types";
-import {
-  cssCollection,
-  generateUniqueClassName,
-  stylesToCSS,
-  getComponentName,
-} from "./htmlMain";
 
 export class HtmlTextBuilder extends HtmlDefaultBuilder {
   constructor(node: TextNode, settings: HTMLSettings) {
@@ -40,7 +30,7 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
       return [];
     }
 
-    return segments.map((segment, index) => {
+    return segments.map((segment) => {
       // Prepare additional CSS properties from layer blur and drop shadow effects.
       const additionalStyles: { [key: string]: string } = {};
 
@@ -67,71 +57,18 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
             segment.letterSpacing,
             segment.fontSize,
           ),
-          // "text-indent": segment.indentation,
           "word-wrap": "break-word",
           ...additionalStyles,
         },
-        this.isJSX,
+        false,
       );
 
-      let chars = segment.characters;
-      if (this.needsJSXTextEscaping) {
-        chars = escapeJSXText(chars);
-      }
-      const charsWithLineBreak = chars.split("\n").join("<br/>");
-      const result: any = {
+      const charsWithLineBreak = segment.characters.split("\n").join("<br/>");
+      return {
         style: styleAttributes,
         text: charsWithLineBreak,
         openTypeFeatures: segment.openTypeFeatures,
       };
-
-      // Add class name and component name for Svelte or styled-components modes
-      const mode = this.settings.htmlGenerationMode;
-      if (
-        (mode === "svelte" || mode === "styled-components") &&
-        styleAttributes
-      ) {
-        // Use the pre-assigned uniqueId from the segment if available,
-        // or generate one if not (as a fallback)
-        const segmentName =
-          (segment as any).uniqueId ||
-          `${((node as any).uniqueName || node.name || "text").replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase()}_text_${(index + 1).toString().padStart(2, "0")}`;
-
-        const className = generateUniqueClassName(segmentName);
-        result.className = className;
-
-        // Convert styles to CSS format
-        const cssStyles = stylesToCSS(
-          styleAttributes
-            .split(this.isJSX ? "," : ";")
-            .map((style) => style.trim())
-            .filter((style) => style),
-          this.isJSX,
-        );
-
-        // In both modes, use span for text segments to avoid selector conflicts
-        const elementTag = "span";
-
-        const componentName = getComponentName(
-          segmentName,
-          className,
-          elementTag,
-        );
-
-        // Store in cssCollection with consistent metadata
-        cssCollection[className] = {
-          styles: cssStyles,
-          nodeType: "TEXT",
-          element: elementTag,
-          componentName: componentName,
-        };
-
-        if (mode === "styled-components") {
-          result.componentName = componentName;
-        }
-      }
-
-      return result;
     });
   }
 

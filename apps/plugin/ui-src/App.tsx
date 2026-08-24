@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { PluginUI, downloadZipFromPayload } from "plugin-ui";
 import {
-  Framework,
   PluginSettings,
   ConversionMessage,
   Message,
@@ -20,7 +19,6 @@ import copy from "copy-to-clipboard";
 
 interface AppState {
   code: string;
-  selectedFramework: Framework;
   isLoading: boolean;
   isZipExporting: boolean;
   settings: PluginSettings | null;
@@ -47,7 +45,6 @@ const isDarkFigmaBackground = (background: string) => {
 export default function App() {
   const [state, setState] = useState<AppState>({
     code: "",
-    selectedFramework: "HTML",
     isLoading: true,
     isZipExporting: false,
     settings: null,
@@ -103,9 +100,7 @@ export default function App() {
             ...prevState,
             ...conversionMessage,
             zipExport: null,
-            selectedFramework: conversionMessage.settings.framework,
-            statusMessage:
-              "Code ready — click Download ZIP for index.html + assets",
+            statusMessage: "Download ZIP for index.html + assets",
             progressPercent: null,
             isLoading: false,
             isZipExporting: false,
@@ -160,7 +155,6 @@ export default function App() {
           setState((prevState) => ({
             ...prevState,
             settings: settingsMessage.settings,
-            selectedFramework: settingsMessage.settings.framework,
           }));
           break;
 
@@ -195,6 +189,15 @@ export default function App() {
           }));
           break;
 
+        case "conversion-complete":
+          setState((prevState) => ({
+            ...prevState,
+            isLoading: false,
+            isZipExporting: false,
+            statusMessage: prevState.statusMessage || "Conversion finished",
+          }));
+          break;
+
         case "selection-json":
           const json = event.data.pluginMessage.data;
           copy(JSON.stringify(json, null, 2));
@@ -214,17 +217,6 @@ export default function App() {
     parent.postMessage({ pluginMessage: { type: "ui-ready" } }, "*");
   }, []);
 
-  const handleFrameworkChange = (updatedFramework: Framework) => {
-    if (updatedFramework !== state.selectedFramework) {
-      setState((prevState) => ({
-        ...prevState,
-        selectedFramework: updatedFramework,
-      }));
-      postUISettingsChangingMessage("framework", updatedFramework, {
-        targetOrigin: "*",
-      });
-    }
-  };
   const handlePreferencesChange = (
     key: keyof PluginSettings,
     value: PluginSettings[keyof PluginSettings],
@@ -252,8 +244,6 @@ export default function App() {
         isZipExporting={state.isZipExporting}
         code={state.code}
         warnings={state.warnings}
-        selectedFramework={state.selectedFramework}
-        setSelectedFramework={handleFrameworkChange}
         onPreferenceChanged={handlePreferencesChange}
         settings={state.settings}
         colors={state.colors}

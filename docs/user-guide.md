@@ -79,7 +79,7 @@ pnpm dev    # watches and rebuilds root dist/
    `…/FigmaToCode/manifest.json`  
    Do **not** pick a file under `apps/`.
 7. Run it: same menu → **Plugins → Development →** your plugin name  
-   (listed as something like **Figma to Code [HTML, Tailwind, Flutter, SwiftUI]**).
+   (listed as something like **Figma to Code**).
 
 Alternate ways to open Development plugins later:
 
@@ -241,23 +241,22 @@ FigmaToCode/
 
 Means “plugin business logic,” **not** “server.”
 
-| Path                                                         | Role                                             |
-| ------------------------------------------------------------ | ------------------------------------------------ |
-| `src/code.ts`                                                | Orchestrate ZIP export + conversion; reply to UI |
-| `src/export/`                                                | `zipAssets`, `assetCache`, `applyAssetFlags`     |
-| `src/altNodes/`                                              | Figma nodes → intermediate tree                  |
-| `src/common/`                                                | Layout helpers + `convertToCode` router          |
-| `src/html/`, `tailwind/`, `flutter/`, `swiftui/`, `compose/` | Per-framework emitters                           |
-| `src/messaging.ts`                                           | `figma.ui.postMessage` helpers                   |
+| Path               | Role                                             |
+| ------------------ | ------------------------------------------------ |
+| `src/code.ts`      | Orchestrate ZIP export + conversion; reply to UI |
+| `src/export/`      | `zipAssets`, `assetCache`, `applyAssetFlags`     |
+| `src/altNodes/`    | Figma nodes → intermediate tree                  |
+| `src/common/`      | Layout helpers + `convertToCode`                 |
+| `src/html/`        | HTML + CSS emitter                               |
+| `src/messaging.ts` | `figma.ui.postMessage` helpers                   |
 
 ### `packages/plugin-ui`
 
-| Path                              | Role                                          |
-| --------------------------------- | --------------------------------------------- |
-| `src/PluginUI.tsx`                | Panel shell (code + Download ZIP, no preview) |
-| `src/downloadZip.ts`              | Build/download ZIP from `zipExport` payload   |
-| `src/components/`                 | Code, colors, gradients, warnings, settings   |
-| `src/codegenPreferenceOptions.ts` | Framework preference definitions              |
+| Path                 | Role                                          |
+| -------------------- | --------------------------------------------- |
+| `src/PluginUI.tsx`   | Panel shell (code + Download ZIP, no preview) |
+| `src/downloadZip.ts` | Build/download ZIP from `zipExport` payload   |
+| `src/components/`    | Code, colors, gradients, warnings             |
 
 ### `apps/plugin`
 

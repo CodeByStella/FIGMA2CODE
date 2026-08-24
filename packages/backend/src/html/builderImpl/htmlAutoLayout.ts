@@ -1,4 +1,3 @@
-import { HTMLSettings } from "types";
 import { formatMultipleJSXArray } from "../../common/parseJSX";
 
 const getFlexDirection = (node: InferredAutoLayoutResult): string =>
@@ -70,7 +69,6 @@ const getFlex = (
 
 export const htmlAutoLayoutProps = (
   node: SceneNode & InferredAutoLayoutResult,
-  settings: HTMLSettings,
 ): string[] =>
   formatMultipleJSXArray(
     {
@@ -82,5 +80,5 @@ export const htmlAutoLayoutProps = (
       "flex-wrap": getFlexWrap(node),
       "align-content": getAlignContent(node),
     },
-    settings.htmlGenerationMode === "jsx",
+    false,
   );

@@ -115,35 +115,36 @@ export const exportNodeAsBase64PNG = async <T extends ExportableNode>(
   const originalVisibility = new Map<SceneNode, boolean>();
 
   if (temporarilyHideChildren) {
-    // Store the original visible state of children
-    (parent.children.map((child: SceneNode) =>
-      originalVisibility.set(child, child.visible),
-    ),
-      // Temporarily hide all children
-      parent.children.forEach((child) => {
-        child.visible = false;
-      }));
-  }
-
-  // export the image as bytes
-  const exportSettings: ExportSettingsImage = {
-    format: "PNG",
-    constraint: { type: "SCALE", value: 1 },
-  };
-  const bytes = await exportAsyncProxy(n, exportSettings);
-
-  if (temporarilyHideChildren) {
-    // After export, restore visibility
-    parent.children.forEach((child) => {
-      child.visible = originalVisibility.get(child) ?? false;
+    parent.children.forEach((child: SceneNode) => {
+      originalVisibility.set(child, child.visible);
+      child.visible = false;
     });
   }
 
-  addWarning("Some images exported as Base64 PNG");
+  const restoreChildren = () => {
+    if (!temporarilyHideChildren) return;
+    parent.children.forEach((child) => {
+      child.visible = originalVisibility.get(child) ?? false;
+    });
+  };
 
-  // Encode binary string to base64
-  const base64 = imageBytesToBase64(bytes);
-  // Save the value so it's only calculated once.
-  node.base64 = base64;
-  return base64;
+  try {
+    const exportSettings: ExportSettingsImage = {
+      format: "PNG",
+      constraint: { type: "SCALE", value: 1 },
+    };
+    const bytes = await exportAsyncProxy(n, exportSettings);
+
+    addWarning("Some images exported as Base64 PNG");
+
+    const base64 = imageBytesToBase64(bytes);
+    node.base64 = base64;
+    return base64;
+  } catch (error) {
+    addWarning(`Failed exporting image for ${node.name || node.id}`);
+    console.error(`Error exporting PNG for ${node.type}:${node.id}`, error);
+    return getPlaceholderImage(node.width, node.height);
+  } finally {
+    restoreChildren();
+  }
 };

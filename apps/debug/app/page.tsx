@@ -1,12 +1,9 @@
 "use client";
 
-import { Framework } from "types";
 import * as React from "react";
 import { PluginUI } from "plugin-ui";
 
 export default function Web() {
-  const [selectedFramework, setSelectedFramework] =
-    React.useState<Framework>("HTML");
   const testWarnings = ["This is an example of a conversion warning message."];
 
   return (
@@ -32,14 +29,12 @@ export default function Web() {
               <PluginUI
                 code={"code goes hereeeee"}
                 isLoading={false}
-                selectedFramework={selectedFramework}
-                setSelectedFramework={setSelectedFramework}
                 settings={null}
                 onPreferenceChanged={() => {}}
                 colors={[]}
                 gradients={[]}
                 warnings={testWarnings}
-                statusMessage="Code ready — click Download ZIP for index.html + assets"
+                statusMessage="Download ZIP for index.html + assets"
                 onDownloadZip={() => {
                   console.log("[debug] Download ZIP clicked");
                 }}
@@ -58,14 +53,12 @@ export default function Web() {
               <PluginUI
                 code={"code goes hereeeee"}
                 isLoading={false}
-                selectedFramework={selectedFramework}
-                setSelectedFramework={setSelectedFramework}
                 settings={null}
                 onPreferenceChanged={() => {}}
                 colors={[]}
                 gradients={[]}
                 warnings={testWarnings}
-                statusMessage="Code ready — click Download ZIP for index.html + assets"
+                statusMessage="Download ZIP for index.html + assets"
                 onDownloadZip={() => {
                   console.log("[debug] Download ZIP clicked");
                 }}

@@ -11,6 +11,7 @@ import {
 } from "./assetCache";
 import { utf8Encode } from "../common/utf8";
 import { postBackendMessage } from "../messaging";
+import { EXPORT_TIMEOUT_MS, withTimeout } from "../common/exportAsyncProxy";
 
 const VECTOR_TYPES = new Set([
   "VECTOR",
@@ -319,7 +320,11 @@ async function trySettings(
   let lastErr: unknown = null;
   for (const settings of settingsList) {
     try {
-      const bytes = await target.exportAsync(settings as any);
+      const bytes = await withTimeout(
+        target.exportAsync(settings as any),
+        EXPORT_TIMEOUT_MS,
+        `${target.type}:${target.id} ${settings.format}`,
+      );
       return { bytes, format: settings.format };
     } catch (err) {
       lastErr = err;
@@ -328,7 +333,11 @@ async function trySettings(
   await sleep(80);
   try {
     const last = settingsList[settingsList.length - 1];
-    const bytes = await target.exportAsync(last as any);
+    const bytes = await withTimeout(
+      target.exportAsync(last as any),
+      EXPORT_TIMEOUT_MS,
+      `${target.type}:${target.id} ${last.format} retry`,
+    );
     return { bytes, format: last.format };
   } catch (err) {
     lastErr = err;

@@ -6,16 +6,11 @@ import EmptyState from "./components/EmptyState";
 import About from "./components/About";
 import WarningsPanel from "./components/WarningsPanel";
 import {
-  Framework,
   PluginSettings,
   LinearGradientConversion,
   SolidColorConversion,
   Warning,
 } from "types";
-import {
-  preferenceOptions,
-  selectPreferenceOptions,
-} from "./codegenPreferenceOptions";
 import Loading from "./components/Loading";
 import { useEffect, useState } from "react";
 import { InfoIcon } from "lucide-react";
@@ -27,8 +22,6 @@ import { TooltipProvider } from "./components/ui/tooltip";
 type PluginUIProps = {
   code: string;
   warnings: Warning[];
-  selectedFramework: Framework;
-  setSelectedFramework: (framework: Framework) => void;
   settings: PluginSettings | null;
   onPreferenceChanged: (
     key: keyof PluginSettings,
@@ -43,47 +36,7 @@ type PluginUIProps = {
   onDownloadZip?: () => void;
 };
 
-const frameworks: Framework[] = ["HTML", "Tailwind", "Flutter", "SwiftUI"];
 const LOADING_INDICATOR_DELAY_MS = 250;
-
-type FrameworkTabsProps = {
-  frameworks: Framework[];
-  selectedFramework: Framework;
-  setSelectedFramework: (framework: Framework) => void;
-  showAbout: boolean;
-  setShowAbout: (show: boolean) => void;
-};
-
-const FrameworkTabs = ({
-  frameworks,
-  selectedFramework,
-  setSelectedFramework,
-  showAbout,
-  setShowAbout,
-}: FrameworkTabsProps) => {
-  return (
-    <div className="grid grid-cols-4 sm:grid-cols-2 md:grid-cols-4 gap-1 grow">
-      {frameworks.map((tab) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          key={`tab ${tab}`}
-          className={`w-full h-8 rounded-md text-sm ${
-            selectedFramework === tab && !showAbout
-              ? "bg-primary text-primary-foreground shadow-xs hover:bg-primary hover:text-primary-foreground dark:hover:bg-primary"
-              : "bg-muted text-foreground hover:bg-primary/90 hover:text-primary-foreground dark:hover:bg-primary/90"
-          }`}
-          onClick={() => {
-            setSelectedFramework(tab as Framework);
-            setShowAbout(false);
-          }}
-        >
-          {tab}
-        </Button>
-      ))}
-    </div>
-  );
-};
 
 const ZipToolbar = ({
   statusMessage,
@@ -112,7 +65,7 @@ const ZipToolbar = ({
         <p className="text-xs text-muted-foreground min-w-0 break-words">
           {statusMessage ||
             (canDownloadZip
-              ? "Code ready — click Download ZIP for index.html + assets"
+              ? "Download ZIP for index.html + assets"
               : "Select a frame to generate code")}
         </p>
         <Button
@@ -179,13 +132,9 @@ export const PluginUI = (props: PluginUIProps) => {
       <div className="flex flex-col h-full overflow-hidden bg-background text-foreground">
         <div className="px-2 py-1.5 dark:bg-card">
           <div className="flex gap-1 bg-muted dark:bg-card rounded-lg p-0.5">
-            <FrameworkTabs
-              frameworks={frameworks}
-              selectedFramework={props.selectedFramework}
-              setSelectedFramework={props.setSelectedFramework}
-              showAbout={showAbout}
-              setShowAbout={setShowAbout}
-            />
+            <p className="flex grow items-center px-2 text-sm font-medium text-foreground">
+              HTML
+            </p>
             <Button
               variant="ghost"
               size="icon"
@@ -242,14 +191,7 @@ export const PluginUI = (props: PluginUIProps) => {
                 <>
                   {warnings.length > 0 && <WarningsPanel warnings={warnings} />}
 
-                  <CodePanel
-                    code={props.code}
-                    selectedFramework={props.selectedFramework}
-                    preferenceOptions={preferenceOptions}
-                    selectPreferenceOptions={selectPreferenceOptions}
-                    settings={props.settings}
-                    onPreferenceChanged={props.onPreferenceChanged}
-                  />
+                  <CodePanel code={props.code} />
 
                   {props.colors.length > 0 && (
                     <div className="mt-3 w-full">

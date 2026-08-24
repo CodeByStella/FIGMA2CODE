@@ -1,4 +1,5 @@
 import { PluginSettings } from "types";
+import { lockedHtmlSettings } from "../common/lockedHtmlSettings";
 import { htmlMain } from "../html/htmlMain";
 import { getAllCachedAssets } from "./assetCache";
 import { utf8Encode } from "../common/utf8";
@@ -33,18 +34,7 @@ export async function buildZipIndexHtml(
   settings: PluginSettings,
   title: string,
 ): Promise<string> {
-  const output = await htmlMain(
-    nodes,
-    {
-      ...settings,
-      framework: "HTML",
-      htmlGenerationMode: "html",
-      embedImages: true,
-      embedVectors: true,
-      relativeAssetPaths: true,
-    },
-    false,
-  );
+  const output = await htmlMain(nodes, lockedHtmlSettings(settings), false);
 
   const body = rewriteDataUrlsToRelativePaths(output.html);
   const css = output.css ? `\n${output.css}\n` : "";

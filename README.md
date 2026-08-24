@@ -2,14 +2,14 @@
 
 [CI](https://github.com/CodeByStella/FIGMA2CODE/actions) · [Figma Community plugin](https://www.figma.com/community/plugin/842128343887142055)
 
-Converts Figma selections into `HTML`, `React (JSX)`, `Svelte`, `styled-components`, `Tailwind`, `Flutter`, and `SwiftUI`, and downloads a **ZIP** with `index.html` (design preview) plus frame JSON and assets.
+Converts Figma selections into **HTML + CSS** and downloads a **ZIP** with `index.html` (design preview) plus frame JSON and assets.
 
 ## How it works
 
-1. **Code preview** — On selection, convert to framework code (no ZIP export yet).
+1. **Code preview** — On selection, convert to HTML + CSS (same document as ZIP `index.html`).
 2. **Download ZIP** — On demand: framed PNGs + baked SVGs, `index.html`, `figma_raw.json`, `assets_map.json`, `assets/*`.
 3. **AltNode conversion** — Auto Layout → flex; freeform → absolute. ZIP download reuses accuracy rules (effects baked, etc.).
-4. **Code panel** — Framework code with images/vectors embedded by default. **No HTML preview** so large frames stay usable.
+4. **Code panel** — HTML + CSS with images/vectors as `assets/*` by default.
 
 Docs:
 

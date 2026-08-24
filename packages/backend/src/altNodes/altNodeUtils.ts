@@ -73,6 +73,13 @@ export const renderAndAttachSVG = async (node: any) => {
       }
     }
 
+    const w = typeof node.width === "number" ? node.width : 0;
+    const h = typeof node.height === "number" ? node.height : 0;
+    if (node.visible === false || w < 0.5 || h < 0.5) {
+      addWarning(`Skipped empty SVG for ${node.name || node.id}`);
+      return node;
+    }
+
     try {
       const svg = (await exportAsyncProxy<string>(node, {
         format: "SVG_STRING",

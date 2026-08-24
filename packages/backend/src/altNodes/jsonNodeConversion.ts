@@ -1,6 +1,7 @@
 import { addWarning } from "../common/commonConversionWarnings";
+import { withTimeout } from "../common/exportAsyncProxy";
 import { PluginSettings } from "types";
-import { variableToColorName } from "../tailwind/conversionTables";
+import { variableToColorName } from "../common/variableToColorName";
 import { HasGeometryTrait, Node, Paint } from "../api_types";
 import { calculateRectangleFromBoundingBox } from "../common/commonPosition";
 import { isLikelyIcon } from "./iconDetection";
@@ -642,9 +643,13 @@ export const nodesToJSON = async (
     nodes.map(async (node) => {
       // Export node to JSON
       const nodeDoc = (
-        (await node.exportAsync({
-          format: "JSON_REST_V1",
-        })) as any
+        (await withTimeout(
+          node.exportAsync({
+            format: "JSON_REST_V1",
+          }),
+          20000,
+          `${node.type}:${node.id} JSON_REST_V1`,
+        )) as any
       ).document;
 
       let nodeCumulativeRotation = 0;

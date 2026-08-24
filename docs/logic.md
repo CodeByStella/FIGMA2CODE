@@ -147,23 +147,14 @@ Groups are treated as frames; child rotations are adjusted so layout math stays 
 
 ---
 
-## Framework dispatch
+## HTML + CSS generation
 
-`convertToCode` routes by `settings.framework`:
+`convertToCode` always runs `htmlMain` with `lockedHtmlSettings` (layer names, color variables, `assets/*` paths).
 
 ```mermaid
 flowchart LR
-  In["processed Node[] + PluginSettings"] --> Switch{"framework"}
-  Switch -->|Tailwind| TW["tailwindMain"]
-  Switch -->|Flutter| FL["flutterMain"]
-  Switch -->|SwiftUI| SW["swiftuiMain"]
-  Switch -->|Compose| CO["composeMain"]
-  Switch -->|HTML / default| HT["htmlMain → .html"]
-  TW --> Code["code string"]
-  FL --> Code
-  SW --> Code
-  CO --> Code
-  HT --> Code
+  In["processed Node[] + PluginSettings"] --> HT["htmlMain"]
+  HT --> Code["HTML + inline CSS"]
 ```
 
 Each `*Main` walks the tree and uses builder modules for:
@@ -230,33 +221,18 @@ In `run()`, `embedImages` and `embedVectors` are **forced `true`** so ZIP-backed
 ```mermaid
 classDiagram
   class PluginSettings {
-    framework
     showLayerNames
     useColorVariables
     embedImages
     embedVectors
     useOldPluginVersion2025
     responsiveRoot
-    htmlGenerationMode
-    tailwindGenerationMode
-    flutterGenerationMode
-    swiftUIGenerationMode
-    composeGenerationMode
-    useTailwind4
-    roundTailwindValues
-    roundTailwindColors
-    customTailwindPrefix
-    baseFontSize
-    thresholdPercent
+    relativeAssetPaths
   }
   PluginSettings --> HTMLSettings
-  PluginSettings --> TailwindSettings
-  PluginSettings --> FlutterSettings
-  PluginSettings --> SwiftUISettings
-  PluginSettings --> ComposeSettings
 ```
 
-Preference toggles in the UI are filtered by `includedLanguages` in `codegenPreferenceOptions.ts`, so only options relevant to the active framework appear.
+Export settings are locked in `lockedHtmlSettings.ts` (layer names on, color variables on, images/vectors as `assets/*`).
 
 ---
 
@@ -284,11 +260,11 @@ flowchart TD
   Layout["Mixed absolute + auto-layout"] --> Decide["Infer parent-child & z-order"]
   Decide --> CodeLayout["Emit absolute offsets or flex as appropriate"]
 
-  Vars["Bound color variables"] --> MapName["Map id → CSS/Tailwind/Flutter name"]
+  Vars["Bound color variables"] --> MapName["Map id → CSS color name"]
   MapName --> PreferVar["Prefer variable tokens when useColorVariables"]
 
-  FX["Gradients / effects"] --> PerFW["Per-framework builders"]
-  PerFW --> Warn["addWarning if unsupported"]
+  FX["Gradients / effects"] --> HTML["HTML CSS builders"]
+  HTML --> Warn["addWarning if unsupported"]
 
   Assets["Vectors / images"] --> ZipFirst["ZIP export + assetCache"]
   ZipFirst --> Inline["SVG / Base64 inline in code"]
@@ -309,14 +285,10 @@ Warnings are accumulated in a module-level set (`commonConversionWarnings`) and 
 | ZIP + asset export     | `packages/backend/src/export/zipAssets.ts`                        |
 | Asset cache / flags    | `packages/backend/src/export/assetCache.ts`, `applyAssetFlags.ts` |
 | JSON → processed nodes | `packages/backend/src/altNodes/jsonNodeConversion.ts`             |
-| Framework switch       | `packages/backend/src/common/retrieveUI/convertToCode.ts`         |
+| HTML + CSS entry       | `packages/backend/src/common/retrieveUI/convertToCode.ts`         |
 | HTML codegen           | `packages/backend/src/html/htmlMain.ts`                           |
-| Tailwind               | `packages/backend/src/tailwind/tailwindMain.ts`                   |
-| Flutter                | `packages/backend/src/flutter/flutterMain.ts`                     |
-| SwiftUI                | `packages/backend/src/swiftui/swiftuiMain.ts`                     |
-| Compose                | `packages/backend/src/compose/composeMain.ts`                     |
+| Locked export settings | `packages/backend/src/common/lockedHtmlSettings.ts`               |
 | Backend → UI messages  | `packages/backend/src/messaging.ts`                               |
 | Shared UI + ZIP button | `packages/plugin-ui/src/PluginUI.tsx`                             |
 | ZIP download helper    | `packages/plugin-ui/src/downloadZip.ts`                           |
-| Preference definitions | `packages/plugin-ui/src/codegenPreferenceOptions.ts`              |
 | Types                  | `packages/types/src/types.ts`                                     |

@@ -1,48 +1,19 @@
-import { tailwindCodeGenTextStyles } from "./../../../packages/backend/src/tailwind/tailwindMain";
-import {
-  run,
-  exportZipPackage,
-  flutterMain,
-  tailwindMain,
-  swiftuiMain,
-  htmlMain,
-  composeMain,
-  postSettingsChanged,
-} from "backend";
+import { run, exportZipPackage, htmlMain, postSettingsChanged } from "backend";
 import { nodesToJSON } from "backend/src/altNodes/jsonNodeConversion";
-import { retrieveGenericSolidUIColors } from "backend/src/common/retrieveUI/retrieveColors";
-import { flutterCodeGenTextStyles } from "backend/src/flutter/flutterMain";
 import { htmlCodeGenTextStyles } from "backend/src/html/htmlMain";
-import { swiftUICodeGenTextStyles } from "backend/src/swiftui/swiftuiMain";
-import { composeCodeGenTextStyles } from "backend/src/compose/composeMain";
 import { PluginSettings, SettingWillChangeMessage } from "types";
 
 let userPluginSettings: PluginSettings;
 
 export const defaultPluginSettings: PluginSettings = {
-  framework: "HTML",
-  showLayerNames: false,
+  showLayerNames: true,
   useOldPluginVersion2025: false,
   responsiveRoot: false,
-  flutterGenerationMode: "snippet",
-  swiftUIGenerationMode: "snippet",
-  composeGenerationMode: "snippet",
-  roundTailwindValues: true,
-  roundTailwindColors: true,
   useColorVariables: true,
-  customTailwindPrefix: "",
   embedImages: true,
   embedVectors: true,
-  htmlGenerationMode: "html",
-  tailwindGenerationMode: "jsx",
-  baseFontSize: 16,
-  useTailwind4: true,
-  thresholdPercent: 15,
-  baseFontFamily: "",
-  fontFamilyCustomConfig: {},
 };
 
-// A helper type guard to ensure the key belongs to the PluginSettings type
 function isKeyOfPluginSettings(key: string): key is keyof PluginSettings {
   return key in defaultPluginSettings;
 }
@@ -71,7 +42,13 @@ const getUserSettings = async () => {
     }, {} as Partial<PluginSettings>),
   };
 
-  userPluginSettings = updatedPluginSrcSettings as PluginSettings;
+  userPluginSettings = {
+    ...updatedPluginSrcSettings,
+    showLayerNames: true,
+    useColorVariables: true,
+    embedImages: true,
+    embedVectors: true,
+  };
   console.log("[DEBUG] getUserSettings - Final settings:", userPluginSettings);
   return userPluginSettings;
 };
@@ -100,7 +77,21 @@ const safeRun = async (settings: PluginSettings) => {
   try {
     isBusy = true;
     console.log("[DEBUG] safeRun - Starting run execution");
-    await run(settings);
+    const watchdog = setTimeout(() => {
+      if (!isBusy) return;
+      console.error("[DEBUG] safeRun - watchdog: conversion still running");
+      isBusy = false;
+      figma.ui.postMessage({
+        type: "error",
+        error:
+          "Code generation timed out. A layer may have failed to export (empty or invisible vector).",
+      });
+    }, 60000);
+    try {
+      await run(settings);
+    } finally {
+      clearTimeout(watchdog);
+    }
     console.log("[DEBUG] safeRun - Run execution completed");
   } catch (e) {
     console.log("[DEBUG] safeRun - Error caught in execution");
@@ -215,7 +206,6 @@ const standardMode = async () => {
     await initSettings();
   };
 
-  // Listen for selection changes
   figma.on("selectionchange", () => {
     console.log(
       "[DEBUG] selectionchange event - New selection count:",
@@ -225,14 +215,9 @@ const standardMode = async () => {
     safeRun(userPluginSettings);
   });
 
-  // Listen for page changes
   figma.loadAllPagesAsync();
   figma.on("documentchange", () => {
     console.log("[DEBUG] documentchange event triggered");
-    // Node: This was causing an infinite load when you try to export a background image from a group that contains children.
-    // The reason for this is that the code will temporarily hide the children of the group in order to export a clean image
-    // then restores the visibility of the children. This constitutes a document change so it's restarting the whole conversion.
-    // In order to stop this, we disable safeRun() when busy (isBusy === true).
     safeRun(userPluginSettings);
   });
 
@@ -265,7 +250,6 @@ const standardMode = async () => {
       );
       console.log("[selection-json]", JSON.stringify(nodeJson, null, 2));
 
-      // Send the JSON data back to the UI
       figma.ui.postMessage({
         type: "selection-json",
         data: nodeJson,
@@ -276,17 +260,15 @@ const standardMode = async () => {
 
 const codegenMode = async () => {
   console.log("[DEBUG] codegenMode - Starting codegen mode initialization");
-  // figma.showUI(__html__, { visible: false });
   await getUserSettings();
 
   figma.codegen.on(
     "generate",
-    async ({ language, node }: CodegenEvent): Promise<CodegenResult[]> => {
+    async ({ node }: CodegenEvent): Promise<CodegenResult[]> => {
       console.log(
-        `[DEBUG] codegen.generate - Language: ${language}, Node: id=${node.id}, type=${node.type}`,
+        `[DEBUG] codegen.generate - Node: id=${node.id}, type=${node.type}`,
       );
 
-      // nodesToJSON returns REST API Node shapes; generators consume them as SceneNode-like trees.
       const convertedSelection = (await nodesToJSON(
         [node],
         userPluginSettings,
@@ -296,182 +278,19 @@ const codegenMode = async () => {
         convertedSelection.length,
       );
 
-      switch (language) {
-        case "html":
-          return [
-            {
-              title: "Code",
-              code: (
-                await htmlMain(
-                  convertedSelection,
-                  { ...userPluginSettings, htmlGenerationMode: "html" },
-                  true,
-                )
-              ).html,
-              language: "HTML",
-            },
-            {
-              title: "Text Styles",
-              code: htmlCodeGenTextStyles(userPluginSettings),
-              language: "HTML",
-            },
-          ];
-        case "html_jsx":
-          return [
-            {
-              title: "Code",
-              code: (
-                await htmlMain(
-                  convertedSelection,
-                  { ...userPluginSettings, htmlGenerationMode: "jsx" },
-                  true,
-                )
-              ).html,
-              language: "HTML",
-            },
-            {
-              title: "Text Styles",
-              code: htmlCodeGenTextStyles(userPluginSettings),
-              language: "HTML",
-            },
-          ];
-
-        case "html_svelte":
-          return [
-            {
-              title: "Code",
-              code: (
-                await htmlMain(
-                  convertedSelection,
-                  { ...userPluginSettings, htmlGenerationMode: "svelte" },
-                  true,
-                )
-              ).html,
-              language: "HTML",
-            },
-            {
-              title: "Text Styles",
-              code: htmlCodeGenTextStyles(userPluginSettings),
-              language: "HTML",
-            },
-          ];
-
-        case "html_styled_components":
-          return [
-            {
-              title: "Code",
-              code: (
-                await htmlMain(
-                  convertedSelection,
-                  {
-                    ...userPluginSettings,
-                    htmlGenerationMode: "styled-components",
-                  },
-                  true,
-                )
-              ).html,
-              language: "HTML",
-            },
-            {
-              title: "Text Styles",
-              code: htmlCodeGenTextStyles(userPluginSettings),
-              language: "HTML",
-            },
-          ];
-
-        case "tailwind":
-        case "tailwind_jsx":
-          return [
-            {
-              title: "Code",
-              code: await tailwindMain(convertedSelection, {
-                ...userPluginSettings,
-                tailwindGenerationMode:
-                  language === "tailwind_jsx" ? "jsx" : "html",
-              }),
-              language: "HTML",
-            },
-            // {
-            //   title: "Style",
-            //   code: tailwindMain(convertedSelection, defaultPluginSettings),
-            //   language: "HTML",
-            // },
-            {
-              title: "Tailwind Colors",
-              code: (await retrieveGenericSolidUIColors("Tailwind"))
-                .map((d) => {
-                  let str = `${d.hex};`;
-                  if (d.colorName !== d.hex) {
-                    str += ` // ${d.colorName}`;
-                  }
-                  if (d.meta) {
-                    str += ` (${d.meta})`;
-                  }
-                  return str;
-                })
-                .join("\n"),
-              language: "JAVASCRIPT",
-            },
-            {
-              title: "Text Styles",
-              code: tailwindCodeGenTextStyles(),
-              language: "HTML",
-            },
-          ];
-        case "flutter":
-          return [
-            {
-              title: "Code",
-              code: flutterMain(convertedSelection, {
-                ...userPluginSettings,
-                flutterGenerationMode: "snippet",
-              }),
-              language: "SWIFT",
-            },
-            {
-              title: "Text Styles",
-              code: flutterCodeGenTextStyles(),
-              language: "SWIFT",
-            },
-          ];
-        case "swiftUI":
-          return [
-            {
-              title: "SwiftUI",
-              code: swiftuiMain(convertedSelection, {
-                ...userPluginSettings,
-                swiftUIGenerationMode: "snippet",
-              }),
-              language: "SWIFT",
-            },
-            {
-              title: "Text Styles",
-              code: swiftUICodeGenTextStyles(),
-              language: "SWIFT",
-            },
-          ];
-        // case "compose":
-        //   return [
-        //     {
-        //       title: "Jetpack Compose",
-        //       code: composeMain(convertedSelection, {
-        //         ...userPluginSettings,
-        //         composeGenerationMode: "snippet",
-        //       }),
-        //       language: "KOTLIN",
-        //     },
-        //     {
-        //       title: "Text Styles",
-        //       code: composeCodeGenTextStyles(),
-        //       language: "KOTLIN",
-        //     },
-        //   ];
-        default:
-          break;
-      }
-
-      const blocks: CodegenResult[] = [];
-      return blocks;
+      return [
+        {
+          title: "Code",
+          code: (await htmlMain(convertedSelection, userPluginSettings, true))
+            .html,
+          language: "HTML",
+        },
+        {
+          title: "Text Styles",
+          code: htmlCodeGenTextStyles(userPluginSettings),
+          language: "HTML",
+        },
+      ];
     },
   );
 };

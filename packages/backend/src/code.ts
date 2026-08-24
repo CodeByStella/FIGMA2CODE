@@ -7,10 +7,10 @@ import {
   postConversionComplete,
   postConversionStart,
   postEmptyMessage,
+  postError,
   postBackendMessage,
 } from "./messaging";
 import { PluginSettings, ZipExportPayload } from "types";
-import { convertToCode } from "./common/retrieveUI/convertToCode";
 import { oldConvertNodesToAltNodes } from "./altNodes/oldAltConversion";
 import {
   getNodeByIdAsyncCalls,
@@ -29,12 +29,10 @@ import {
   buildZipIndexHtml,
   indexHtmlToZipBase64,
 } from "./export/buildStaticHtml";
+import { lockedHtmlSettings } from "./common/lockedHtmlSettings";
 
-const effectiveEmbedSettings = (settings: PluginSettings): PluginSettings => ({
-  ...settings,
-  embedImages: true,
-  embedVectors: true,
-});
+let lastZipExport: { rootId: string; zipExport: ZipExportPayload } | null =
+  null;
 
 async function convertSelection(
   settings: PluginSettings,
@@ -62,69 +60,83 @@ async function convertSelection(
   return { selection, convertedSelection };
 }
 
-/** Selection / settings change: generate code only (no ZIP asset export). */
+/** Selection change: export assets then build the same index.html the ZIP ships. */
 export const run = async (settings: PluginSettings) => {
   resetPerformanceCounters();
   clearWarnings();
   clearAssetCache();
   postConversionStart();
 
-  const { framework, useOldPluginVersion2025 } = settings;
-  const selection = figma.currentPage.selection;
+  try {
+    const { useOldPluginVersion2025 } = settings;
+    const selection = figma.currentPage.selection;
 
-  if (selection.length === 0) {
-    postEmptyMessage();
-    return;
+    if (selection.length === 0) {
+      postEmptyMessage();
+      return;
+    }
+
+    const effectiveSettings = lockedHtmlSettings(settings);
+    const nodeToJSONStart = Date.now();
+
+    lastZipExport = null;
+    const { zipExport } = await exportZipAssets(selection);
+
+    const converted = await convertSelection(
+      effectiveSettings,
+      useOldPluginVersion2025,
+    );
+    if (!converted) {
+      postEmptyMessage();
+      return;
+    }
+
+    const convertToCodeStart = Date.now();
+    const code = await buildZipIndexHtml(
+      converted.convertedSelection,
+      effectiveSettings,
+      selection[0]?.name || "export",
+    );
+    zipExport.files["index.html"] = indexHtmlToZipBase64(code);
+    lastZipExport = { rootId: selection[0].id, zipExport };
+    console.log(
+      `[benchmark] convertToCode: ${Date.now() - convertToCodeStart}ms`,
+    );
+
+    const colors = await retrieveGenericSolidUIColors();
+    const gradients = await retrieveGenericLinearGradients();
+    console.log(
+      `[benchmark] total generation time: ${Date.now() - nodeToJSONStart}ms`,
+    );
+    console.log(
+      `[benchmark] getNodeByIdAsync: ${getNodeByIdAsyncTime}ms (${getNodeByIdAsyncCalls} calls)`,
+    );
+    console.log(
+      `[benchmark] getStyledTextSegments: ${getStyledTextSegmentsTime}ms (${getStyledTextSegmentsCalls} calls)`,
+    );
+    console.log(
+      `[benchmark] processColorVariables: ${processColorVariablesTime}ms (${processColorVariablesCalls} calls)`,
+    );
+
+    postConversionComplete({
+      code,
+      colors,
+      gradients,
+      settings: effectiveSettings,
+      warnings: [...warnings],
+    });
+  } catch (err) {
+    const message =
+      err && typeof err === "object" && "message" in err
+        ? String((err as Error).message)
+        : String(err || "Code generation failed");
+    console.error("[run] conversion failed", err);
+    postError(message);
   }
-
-  const effectiveSettings = effectiveEmbedSettings(settings);
-  const nodeToJSONStart = Date.now();
-
-  const converted = await convertSelection(
-    effectiveSettings,
-    useOldPluginVersion2025,
-  );
-  if (!converted) {
-    postEmptyMessage();
-    return;
-  }
-
-  const convertToCodeStart = Date.now();
-  const code = await convertToCode(
-    converted.convertedSelection,
-    effectiveSettings,
-  );
-  console.log(
-    `[benchmark] convertToCode: ${Date.now() - convertToCodeStart}ms`,
-  );
-
-  const colors = await retrieveGenericSolidUIColors(framework);
-  const gradients = await retrieveGenericLinearGradients(framework);
-  console.log(
-    `[benchmark] total generation time: ${Date.now() - nodeToJSONStart}ms`,
-  );
-  console.log(
-    `[benchmark] getNodeByIdAsync: ${getNodeByIdAsyncTime}ms (${getNodeByIdAsyncCalls} calls)`,
-  );
-  console.log(
-    `[benchmark] getStyledTextSegments: ${getStyledTextSegmentsTime}ms (${getStyledTextSegmentsCalls} calls)`,
-  );
-  console.log(
-    `[benchmark] processColorVariables: ${processColorVariablesTime}ms (${processColorVariablesCalls} calls)`,
-  );
-
-  postConversionComplete({
-    code,
-    colors,
-    gradients,
-    settings: effectiveSettings,
-    warnings: [...warnings],
-  });
 };
 
-/** On-demand ZIP: assets + index.html. Triggered by Download ZIP in the UI. */
+/** On-demand ZIP: reuse the last preview package when the selection is unchanged. */
 export const exportZipPackage = async (settings: PluginSettings) => {
-  clearAssetCache();
   postBackendMessage({ type: "zipStart" });
 
   const selection = figma.currentPage.selection;
@@ -136,7 +148,20 @@ export const exportZipPackage = async (settings: PluginSettings) => {
     return;
   }
 
-  const effectiveSettings = effectiveEmbedSettings(settings);
+  const rootId = selection[0].id;
+  if (
+    lastZipExport &&
+    lastZipExport.rootId === rootId &&
+    lastZipExport.zipExport.files["index.html"]
+  ) {
+    postBackendMessage({
+      type: "zipReady",
+      zipExport: lastZipExport.zipExport,
+    } as { type: "zipReady"; zipExport: ZipExportPayload });
+    return;
+  }
+
+  const effectiveSettings = lockedHtmlSettings(settings);
 
   try {
     const { zipExport } = await exportZipAssets(selection);
@@ -164,6 +189,7 @@ export const exportZipPackage = async (settings: PluginSettings) => {
       }
     }
 
+    lastZipExport = { rootId, zipExport };
     postBackendMessage({
       type: "zipReady",
       zipExport,
