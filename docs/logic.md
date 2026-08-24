@@ -1,40 +1,38 @@
 # Logic
 
-How Figma to Code turns a Figma selection into framework-specific source **and** a downloadable ZIP of JSON + assets. This document describes the runtime pipeline, packages, and messaging — not setup steps (see [Developer Guide](./user-guide.md)).
+How Figma to Code turns a Figma selection into HTML + CSS **and** a downloadable ZIP of JSON + assets. This document describes the runtime pipeline and messaging — not setup steps (see [Developer Guide](./user-guide.md)).
 
 ---
 
 ## High-level architecture
 
-The monorepo splits **Figma sandbox logic**, **shared UI**, and **plugin assembly**.
-
 ```mermaid
 flowchart TB
   subgraph Figma["Figma host"]
     Canvas["Canvas selection / document"]
-    Sandbox["Plugin main thread<br/>apps/plugin/plugin-src"]
-    UI["Plugin iframe UI<br/>apps/plugin/ui-src + packages/plugin-ui"]
+    Sandbox["Plugin main thread<br/>src/plugin.ts"]
+    UI["Plugin iframe UI<br/>src/ui"]
   end
 
-  subgraph Packages["Shared packages"]
-    Backend["packages/backend<br/>ZIP export + conversion + codegen"]
-    Types["packages/types<br/>PluginSettings, messages"]
+  subgraph Source["src/"]
+    Convert["convert / export"]
+    Types["types.ts"]
   end
 
   Canvas --> Sandbox
-  Sandbox --> Backend
-  Backend --> Types
+  Sandbox --> Convert
+  Convert --> Types
   UI --> Types
   Sandbox <-->|"postMessage"| UI
 ```
 
-| Package / app            | Role                                                              |
-| ------------------------ | ----------------------------------------------------------------- |
-| `apps/plugin/plugin-src` | Entry: settings, selection listeners, codegen mode, calls `run()` |
-| `packages/backend`       | Asset ZIP, AltNode conversion, layout helpers, framework emitters |
-| `packages/plugin-ui`     | Framework tabs, ZIP download, code panel, preferences             |
-| `packages/types`         | Shared `PluginSettings` and message contracts                     |
-| `apps/debug`             | Next.js host to exercise the UI without Figma                     |
+| Path            | Role                                                              |
+| --------------- | ----------------------------------------------------------------- |
+| `src/plugin.ts` | Entry: settings, selection listeners, codegen mode, calls `run()` |
+| `src/convert/`  | Node processing + HTML + CSS emitter                              |
+| `src/export/`   | Asset ZIP                                                         |
+| `src/ui/`       | Panel: code, ZIP download, colors                                 |
+| `src/types.ts`  | Shared `PluginSettings` and message contracts                     |
 
 ---
 
@@ -65,13 +63,13 @@ flowchart LR
 
 ## End-to-end conversion pipeline
 
-Core orchestration lives in `packages/backend/src/code.ts` (`run`).
+Core orchestration lives in `src/convert/run.ts` (`run`).
 
 ```mermaid
 flowchart TD
   A["run(settings)"] --> B{"selection empty?"}
   B -->|yes| Empty["postEmptyMessage"]
-  B -->|no| Conv["nodesToJSON + convertToCode"]
+  B -->|no| Conv["nodesToJSON + buildZipIndexHtml"]
   Conv --> Colors["retrieve colors and gradients"]
   Colors --> Done["postConversionComplete (code only)"]
 
@@ -97,15 +95,15 @@ Open `index.html` after extracting the ZIP to view a design-faithful HTML render
 
 Accuracy rules (ported for fidelity):
 
-| Rule                     | Behavior                                                         |
-| ------------------------ | ---------------------------------------------------------------- |
-| IMAGE fills              | Framed `exportAsync` PNG (not CSS `background-image` alone)      |
-| Vectors / shapes / icons | Baked SVG (`exportAsync` SVG)                                    |
-| Effects on export        | Unclip ancestors while exporting; mark `effectsBaked`            |
-| Conversion reuse         | Asset bytes come from `assetCache` — no second export for embeds |
-| CSS shadows              | Skip `box-shadow` when `effectsBaked` so shadows are not doubled |
+| Rule                     | Behavior                                                           |
+| ------------------------ | ------------------------------------------------------------------ |
+| IMAGE fills              | Framed `exportAsync` PNG (not CSS `background-image` alone)        |
+| Vectors / shapes / icons | Baked SVG (`exportAsync` SVG)                                      |
+| Effects on export        | Unclip ancestors while exporting; mark `effectsBaked`              |
+| Conversion reuse         | Asset bytes come from `export/cache` — no second export for embeds |
+| CSS shadows              | Skip `box-shadow` when `effectsBaked` so shadows are not doubled   |
 
-UI: **Download ZIP** builds a browser ZIP from the `zipExport` payload (`packages/plugin-ui/src/downloadZip.ts`).
+UI: **Download ZIP** builds a browser ZIP from the `zipExport` payload (`src/ui/zip.ts`).
 
 `safeRun` in the plugin entry serializes runs (`isLoading`) so temporary visibility toggles during image export do not recurse via `documentchange`.
 
@@ -113,7 +111,7 @@ UI: **Download ZIP** builds a browser ZIP from the `zipExport` payload (`package
 
 ## Node conversion (`nodesToJSON`)
 
-Modern path: `packages/backend/src/altNodes/jsonNodeConversion.ts`.
+Modern path: `src/convert/nodes/toJson.ts`.
 
 ```mermaid
 flowchart TD
@@ -147,23 +145,14 @@ Groups are treated as frames; child rotations are adjusted so layout math stays 
 
 ---
 
-## Framework dispatch
+## HTML + CSS generation
 
-`convertToCode` routes by `settings.framework`:
+`run` always builds HTML through `htmlMain` with `lockedHtmlSettings` (layer names, color variables, `assets/*` paths). Preview and ZIP `index.html` share that document.
 
 ```mermaid
 flowchart LR
-  In["processed Node[] + PluginSettings"] --> Switch{"framework"}
-  Switch -->|Tailwind| TW["tailwindMain"]
-  Switch -->|Flutter| FL["flutterMain"]
-  Switch -->|SwiftUI| SW["swiftuiMain"]
-  Switch -->|Compose| CO["composeMain"]
-  Switch -->|HTML / default| HT["htmlMain → .html"]
-  TW --> Code["code string"]
-  FL --> Code
-  SW --> Code
-  CO --> Code
-  HT --> Code
+  In["processed Node[] + PluginSettings"] --> HT["htmlMain"]
+  HT --> Code["HTML + inline CSS"]
 ```
 
 Each `*Main` walks the tree and uses builder modules for:
@@ -175,19 +164,19 @@ Each `*Main` walks the tree and uses builder modules for:
 - Text (typography segments)
 - Image Base64 / SVG embed (forced on in `run`)
 
-The panel shows **code + ZIP** only. `generateHTMLPreview` may still exist in `htmlMain` for legacy/compat types, but the UI no longer renders an HTML preview.
+The panel shows **code + ZIP** only. `generateHTMLPreview` may still exist in `generate.ts` for legacy/compat types, but the UI no longer renders an HTML preview.
 
 ---
 
 ## Messaging contract
 
-UI and main thread talk over `postMessage`. Types live in `packages/types`.
+UI and main thread talk over `postMessage`. Types live in `src/types.ts`.
 
 ```mermaid
 sequenceDiagram
   participant UI as Plugin UI
   participant Main as Plugin main
-  participant Backend as backend.run
+  participant Backend as convert.run
 
   UI->>Main: ui-ready
   Main->>Main: load clientStorage settings
@@ -223,51 +212,34 @@ sequenceDiagram
 
 ## Settings model
 
-`PluginSettings` merges framework-specific fields. Defaults are set in `apps/plugin/plugin-src/code.ts` and persisted in `figma.clientStorage` under `userPluginSettings`.
+`PluginSettings` is HTML-only. Defaults are set in `src/plugin.ts` and persisted in `figma.clientStorage` under `userPluginSettings`.
 
 In `run()`, `embedImages` and `embedVectors` are **forced `true`** so ZIP-backed embeds stay accurate even if UI toggles differ.
 
 ```mermaid
 classDiagram
   class PluginSettings {
-    framework
     showLayerNames
     useColorVariables
     embedImages
     embedVectors
     useOldPluginVersion2025
     responsiveRoot
-    htmlGenerationMode
-    tailwindGenerationMode
-    flutterGenerationMode
-    swiftUIGenerationMode
-    composeGenerationMode
-    useTailwind4
-    roundTailwindValues
-    roundTailwindColors
-    customTailwindPrefix
-    baseFontSize
-    thresholdPercent
+    relativeAssetPaths
   }
   PluginSettings --> HTMLSettings
-  PluginSettings --> TailwindSettings
-  PluginSettings --> FlutterSettings
-  PluginSettings --> SwiftUISettings
-  PluginSettings --> ComposeSettings
 ```
 
-Preference toggles in the UI are filtered by `includedLanguages` in `codegenPreferenceOptions.ts`, so only options relevant to the active framework appear.
+Export settings are locked in `src/convert/settings.ts` (layer names on, color variables on, images/vectors as `assets/*`).
 
 ---
 
-## Monorepo data flow (build)
+## Build data flow
 
 ```mermaid
 flowchart LR
-  BE["packages/backend"] --> PS["apps/plugin/plugin-src"]
-  UI["packages/plugin-ui"] --> US["apps/plugin/ui-src"]
-  PS --> DistJS["dist/code.js"]
-  US --> DistHTML["dist/index.html"]
+  Plugin["src/plugin.ts"] --> DistJS["dist/code.js"]
+  UI["src/ui"] --> DistHTML["dist/index.html"]
   DistJS --> Manifest["manifest.json"]
   DistHTML --> Manifest
   Manifest --> Figma["Figma loads plugin"]
@@ -284,39 +256,35 @@ flowchart TD
   Layout["Mixed absolute + auto-layout"] --> Decide["Infer parent-child & z-order"]
   Decide --> CodeLayout["Emit absolute offsets or flex as appropriate"]
 
-  Vars["Bound color variables"] --> MapName["Map id → CSS/Tailwind/Flutter name"]
+  Vars["Bound color variables"] --> MapName["Map id → CSS color name"]
   MapName --> PreferVar["Prefer variable tokens when useColorVariables"]
 
-  FX["Gradients / effects"] --> PerFW["Per-framework builders"]
-  PerFW --> Warn["addWarning if unsupported"]
+  FX["Gradients / effects"] --> HTML["HTML CSS builders"]
+  HTML --> Warn["addWarning if unsupported"]
 
-  Assets["Vectors / images"] --> ZipFirst["ZIP export + assetCache"]
+  Assets["Vectors / images"] --> ZipFirst["ZIP export + cache"]
   ZipFirst --> Inline["SVG / Base64 inline in code"]
   ZipFirst --> Flags["effectsBaked / framed image flags"]
   Flags --> SkipDup["Skip CSS box-shadow when baked"]
 ```
 
-Warnings are accumulated in a module-level set (`commonConversionWarnings`) and returned with the conversion payload so the UI can surface them without failing the whole run.
+Warnings are accumulated in a module-level set (`src/convert/warnings.ts`) and returned with the conversion payload so the UI can surface them without failing the whole run.
 
 ---
 
 ## Key source map
 
-| Concern                | Location                                                          |
-| ---------------------- | ----------------------------------------------------------------- |
-| Plugin entry & modes   | `apps/plugin/plugin-src/code.ts`                                  |
-| Orchestration `run`    | `packages/backend/src/code.ts`                                    |
-| ZIP + asset export     | `packages/backend/src/export/zipAssets.ts`                        |
-| Asset cache / flags    | `packages/backend/src/export/assetCache.ts`, `applyAssetFlags.ts` |
-| JSON → processed nodes | `packages/backend/src/altNodes/jsonNodeConversion.ts`             |
-| Framework switch       | `packages/backend/src/common/retrieveUI/convertToCode.ts`         |
-| HTML codegen           | `packages/backend/src/html/htmlMain.ts`                           |
-| Tailwind               | `packages/backend/src/tailwind/tailwindMain.ts`                   |
-| Flutter                | `packages/backend/src/flutter/flutterMain.ts`                     |
-| SwiftUI                | `packages/backend/src/swiftui/swiftuiMain.ts`                     |
-| Compose                | `packages/backend/src/compose/composeMain.ts`                     |
-| Backend → UI messages  | `packages/backend/src/messaging.ts`                               |
-| Shared UI + ZIP button | `packages/plugin-ui/src/PluginUI.tsx`                             |
-| ZIP download helper    | `packages/plugin-ui/src/downloadZip.ts`                           |
-| Preference definitions | `packages/plugin-ui/src/codegenPreferenceOptions.ts`              |
-| Types                  | `packages/types/src/types.ts`                                     |
+| Concern                | Location                                     |
+| ---------------------- | -------------------------------------------- |
+| Plugin entry & modes   | `src/plugin.ts`                              |
+| Orchestration `run`    | `src/convert/run.ts`                         |
+| ZIP + asset export     | `src/export/zip.ts`                          |
+| Asset cache / flags    | `src/export/cache.ts`, `src/export/flags.ts` |
+| JSON → processed nodes | `src/convert/nodes/toJson.ts`                |
+| Static HTML document   | `src/export/html.ts`                         |
+| HTML codegen           | `src/convert/html/generate.ts`               |
+| Locked export settings | `src/convert/settings.ts`                    |
+| Plugin → UI messages   | `src/messaging.ts`                           |
+| Panel + ZIP button     | `src/ui/PluginUI.tsx`                        |
+| ZIP download helper    | `src/ui/zip.ts`                              |
+| Types                  | `src/types.ts`                               |

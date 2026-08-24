@@ -3,11 +3,12 @@
   "private": true,
   "packageManager": "pnpm@9.14.4",
   "scripts": {
-    "build": "pnpm --dir apps/plugin build",
-    "build:watch": "pnpm --dir apps/plugin build:watch",
-    "dev": "pnpm --dir apps/plugin dev",
-    "dev:debug": "pnpm --dir apps/debug dev",
-    "lint": "turbo run lint --log-order=grouped --output-logs=errors-only",
+    "build": "pnpm run build:ui && pnpm run build:main --minify --tree-shaking=true",
+    "build:main": "esbuild src/plugin.ts --bundle --target=ES6 --outfile=dist/code.js --alias:types=./src/types.ts",
+    "build:ui": "vite build --minify esbuild --emptyOutDir=false",
+    "build:watch": "concurrently -n plugin,ui \"pnpm run build:main --watch\" \"pnpm run build:ui --watch\"",
+    "dev": "pnpm build:watch",
+    "lint": "eslint src --max-warnings=0",
     "format": "prettier --write \"**/*.{ts,tsx,css,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,css,md,json}\"",
     "prepare": "husky"
@@ -17,15 +18,42 @@
       "prettier --write"
     ]
   },
+  "dependencies": {
+    "@base-ui/react": "^1.4.1",
+    "@figma/plugin-typings": "^1.125.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "copy-to-clipboard": "^4.0.2",
+    "html-entities": "^2.6.0",
+    "js-base64": "^3.7.8",
+    "lucide-react": "^1.14.0",
+    "nanoid": "^5.1.11",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-syntax-highlighter": "^16.1.1",
+    "tailwind-merge": "^3.6.0"
+  },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "^25.7.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/react-syntax-highlighter": "15.5.13",
+    "@vitejs/plugin-react-swc": "^4.3.0",
+    "concurrently": "^9.2.1",
+    "esbuild": "^0.28.0",
     "eslint": "^10.3.0",
-    "eslint-config-custom": "workspace:*",
+    "eslint-config-next": "^16.2.6",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "7.37.5",
     "husky": "^9.1.7",
     "lint-staged": "^17.2.0",
+    "postcss": "^8.5.14",
     "prettier": "^3.8.3",
+    "tailwindcss": "4.3.0",
     "tsx": "^4.23.1",
-    "turbo": "^2.9.12",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vite": "^8.0.12",
+    "vite-plugin-singlefile": "^2.3.3"
   }
 }

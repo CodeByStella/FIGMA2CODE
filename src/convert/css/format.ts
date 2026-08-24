@@ -1,0 +1,52 @@
+import { encode } from "html-entities";
+import { numberToFixedString } from "./numbers";
+
+export const formatWithJSX = (
+  property: string,
+  isJsx: boolean,
+  value: number | string,
+): string => {
+  // convert font-size to fontSize.
+  const jsx_property = property
+    .split("-")
+    .map((d, i) => (i > 0 ? d.charAt(0).toUpperCase() + d.slice(1) : d))
+    .join("");
+
+  if (typeof value === "number") {
+    if (isJsx) {
+      return `${jsx_property}: ${numberToFixedString(value)}`;
+    } else {
+      return `${property}: ${numberToFixedString(value)}px`;
+    }
+  } else if (isJsx) {
+    return `${jsx_property}: '${value}'`;
+  } else {
+    return `${property}: ${value}`;
+  }
+};
+
+export const formatMultipleJSXArray = (
+  styles: Record<string, string | number>,
+  isJsx: boolean,
+): string[] =>
+  Object.entries(styles)
+    .filter(([key, value]) => value !== "")
+    .map(([key, value]) => formatWithJSX(key, isJsx, value));
+
+export const formatMultipleJSX = (
+  styles: Record<string, string | number | null>,
+  isJsx: boolean,
+): string =>
+  Object.entries(styles)
+    .filter(([key, value]) => value)
+    .map(([key, value]) => formatWithJSX(key, isJsx, value!))
+    .join(isJsx ? ", " : "; ");
+
+export const escapeJSXText = (text: string): string => {
+  return (
+    encode(text, { level: "html5" })
+      // process JSX curly braces
+      .replace(/\{/g, "&#123;")
+      .replace(/\}/g, "&#125;")
+  );
+};
