@@ -2,7 +2,7 @@ import { AltNode, ExportableNode } from "types";
 import { btoa } from "js-base64";
 import { addWarning } from "../warnings";
 import { exportAsyncProxy } from "./exportAsync";
-import { getCachedAsset } from "../../export/cache";
+import { bytesToDataUrl, getCachedAsset } from "../../export/cache";
 
 export const PLACEHOLDER_IMAGE_DOMAIN = "https://placehold.co";
 
@@ -98,8 +98,10 @@ export const exportNodeAsBase64PNG = async <T extends ExportableNode>(
     if (node.base64 !== undefined && node.base64 !== "") {
       return node.base64;
     }
-    node.base64 = cached.dataUrl;
-    return cached.dataUrl;
+    if (cached.bytes) {
+      node.base64 = bytesToDataUrl(cached.bytes, cached.mime);
+      return node.base64;
+    }
   }
 
   // Shortcut export if the node has already been converted.

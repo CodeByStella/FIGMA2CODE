@@ -10,9 +10,10 @@ import {
   postError,
   postBackendMessage,
 } from "../messaging";
-import { PluginSettings, ZipExportPayload } from "types";
+import { PluginSettings } from "types";
 import { oldConvertNodesToAltNodes } from "./nodes/legacy";
 import {
+  clearVariableCache,
   getNodeByIdAsyncCalls,
   getNodeByIdAsyncTime,
   getStyledTextSegmentsCalls,
@@ -22,14 +23,31 @@ import {
   processColorVariablesTime,
   resetPerformanceCounters,
 } from "./nodes/toJson";
-import { exportZipAssets } from "../export/zip";
+import { exportZipAssets, planAssetTargets } from "../export/zip";
 import { clearAssetCache } from "../export/cache";
 import { applyAssetFlagsToTree } from "../export/flags";
-import { buildZipIndexHtml, indexHtmlToZipBase64 } from "../export/html";
+import { buildZipIndexHtml } from "../export/html";
 import { lockedHtmlSettings } from "./settings";
+import { utf8Encode } from "../shared/utf8";
 
-let lastZipExport: { rootId: string; zipExport: ZipExportPayload } | null =
-  null;
+const PREVIEW_LINES = 25;
+
+let lastPreview: { rootId: string; html: string } | null = null;
+
+function snippetFromHtml(html: string) {
+  const lines = html.split("\n");
+  const lineCount = lines.length;
+  const codeBytes = utf8Encode(html).length;
+  const codePreview =
+    lineCount <= PREVIEW_LINES
+      ? html
+      : `${lines.slice(0, PREVIEW_LINES).join("\n")}\n...`;
+  return { codePreview, lineCount, codeBytes };
+}
+
+export function getLastPreviewHtml(): string | null {
+  return lastPreview?.html ?? null;
+}
 
 async function convertSelection(
   settings: PluginSettings,
@@ -57,11 +75,12 @@ async function convertSelection(
   return { selection, convertedSelection };
 }
 
-/** Selection change: export assets then build the same index.html the ZIP ships. */
+/** Selection change: plan asset paths and build HTML. No exportAsync for assets. */
 export const run = async (settings: PluginSettings) => {
   resetPerformanceCounters();
+  clearVariableCache();
   clearWarnings();
-  clearAssetCache();
+  lastPreview = null;
   postConversionStart();
 
   try {
@@ -69,6 +88,7 @@ export const run = async (settings: PluginSettings) => {
     const selection = figma.currentPage.selection;
 
     if (selection.length === 0) {
+      clearAssetCache();
       postEmptyMessage();
       return;
     }
@@ -76,14 +96,14 @@ export const run = async (settings: PluginSettings) => {
     const effectiveSettings = lockedHtmlSettings(settings);
     const nodeToJSONStart = Date.now();
 
-    lastZipExport = null;
-    const { zipExport } = await exportZipAssets(selection);
+    planAssetTargets(selection);
 
     const converted = await convertSelection(
       effectiveSettings,
       useOldPluginVersion2025,
     );
     if (!converted) {
+      clearAssetCache();
       postEmptyMessage();
       return;
     }
@@ -94,8 +114,7 @@ export const run = async (settings: PluginSettings) => {
       effectiveSettings,
       selection[0]?.name || "export",
     );
-    zipExport.files["index.html"] = indexHtmlToZipBase64(code);
-    lastZipExport = { rootId: selection[0].id, zipExport };
+    lastPreview = { rootId: selection[0].id, html: code };
     console.log(
       `[benchmark] convertToCode: ${Date.now() - convertToCodeStart}ms`,
     );
@@ -116,7 +135,7 @@ export const run = async (settings: PluginSettings) => {
     );
 
     postConversionComplete({
-      code,
+      ...snippetFromHtml(code),
       colors,
       gradients,
       settings: effectiveSettings,
@@ -128,11 +147,12 @@ export const run = async (settings: PluginSettings) => {
         ? String((err as Error).message)
         : String(err || "Code generation failed");
     console.error("[run] conversion failed", err);
+    lastPreview = null;
     postError(message);
   }
 };
 
-/** On-demand ZIP: reuse the last preview package when the selection is unchanged. */
+/** On-demand ZIP: export bytes, stream files, reuse last preview HTML when possible. */
 export const exportZipPackage = async (settings: PluginSettings) => {
   postBackendMessage({ type: "zipStart" });
 
@@ -146,22 +166,10 @@ export const exportZipPackage = async (settings: PluginSettings) => {
   }
 
   const rootId = selection[0].id;
-  if (
-    lastZipExport &&
-    lastZipExport.rootId === rootId &&
-    lastZipExport.zipExport.files["index.html"]
-  ) {
-    postBackendMessage({
-      type: "zipReady",
-      zipExport: lastZipExport.zipExport,
-    } as { type: "zipReady"; zipExport: ZipExportPayload });
-    return;
-  }
-
   const effectiveSettings = lockedHtmlSettings(settings);
 
   try {
-    const { zipExport } = await exportZipAssets(selection);
+    const exported = await exportZipAssets(selection);
 
     postBackendMessage({
       type: "progress",
@@ -169,34 +177,60 @@ export const exportZipPackage = async (settings: PluginSettings) => {
       percent: 88,
     });
 
-    const converted = await convertSelection(
-      effectiveSettings,
-      settings.useOldPluginVersion2025,
-    );
-    if (converted) {
-      try {
-        const indexHtml = await buildZipIndexHtml(
+    let html =
+      lastPreview && lastPreview.rootId === rootId && !exported.formatDrift
+        ? lastPreview.html
+        : null;
+
+    if (!html) {
+      const converted = await convertSelection(
+        effectiveSettings,
+        settings.useOldPluginVersion2025,
+      );
+      if (converted) {
+        html = await buildZipIndexHtml(
           converted.convertedSelection,
           effectiveSettings,
           selection[0]?.name || "export",
         );
-        zipExport.files["index.html"] = indexHtmlToZipBase64(indexHtml);
-      } catch (err) {
-        console.warn("[exportZipPackage] index.html failed", err);
+        lastPreview = { rootId, html };
       }
     }
 
-    lastZipExport = { rootId, zipExport };
+    if (html) {
+      postBackendMessage({
+        type: "zipFile",
+        path: "index.html",
+        bytes: utf8Encode(html),
+      });
+    }
+
     postBackendMessage({
-      type: "zipReady",
-      zipExport,
-    } as { type: "zipReady"; zipExport: ZipExportPayload });
+      type: "zipFile",
+      path: "figma_raw.json",
+      bytes: utf8Encode(JSON.stringify(exported.rawDocument) + "\n"),
+    });
+    postBackendMessage({
+      type: "zipFile",
+      path: "assets_map.json",
+      bytes: utf8Encode(JSON.stringify(exported.assetsMap) + "\n"),
+    });
+
+    clearAssetCache();
+
+    postBackendMessage({
+      type: "zipDone",
+      folder: exported.folder,
+      assetCount: exported.assetCount,
+      failedCount: exported.failedCount,
+    });
   } catch (err) {
     const message =
       err && typeof err === "object" && "message" in err
         ? String((err as Error).message)
         : String(err || "ZIP export failed");
     console.error("[exportZipPackage]", err);
+    clearAssetCache();
     postBackendMessage({ type: "zipError", error: message });
   }
 };

@@ -1,15 +1,8 @@
 /**
  * Asset export for ZIP + conversion (ported accuracy rules from figma-code plugin).
  */
-import { ZipExportPayload } from "types";
-import {
-  CachedAsset,
-  bytesToDataUrl,
-  clearAssetCache,
-  setAssetCache,
-  uint8ToBase64,
-} from "./cache";
-import { utf8Encode } from "../shared/utf8";
+import { ZipFileMessage } from "types";
+import { CachedAsset, clearAssetCache, setAssetCache } from "./cache";
 import { postBackendMessage } from "../messaging";
 import { EXPORT_TIMEOUT_MS, withTimeout } from "../convert/media/exportAsync";
 
@@ -385,11 +378,90 @@ async function withHiddenChildren<T>(
   }
 }
 
+function pngAttempts(): ExportSettingsImage[] {
+  return [{ format: "PNG", constraint: { type: "SCALE", value: 1 } }];
+}
+
+function assetRelPath(node: SceneNode, format: ExportFormat): string {
+  const ext = format === "SVG" ? ".svg" : ".png";
+  return `assets/${safeSlug(node.name)}_${safeId(node.id)}${ext}`;
+}
+
+function nodeLayoutFlags(
+  node: SceneNode,
+): Pick<
+  CachedAsset,
+  | "layoutWidth"
+  | "layoutHeight"
+  | "flipHorizontal"
+  | "flipVertical"
+  | "rotationDeg"
+> {
+  const flags: Pick<
+    CachedAsset,
+    | "layoutWidth"
+    | "layoutHeight"
+    | "flipHorizontal"
+    | "flipVertical"
+    | "rotationDeg"
+  > = {};
+  try {
+    if ("width" in node && "height" in node) {
+      flags.layoutWidth = (node as LayoutMixin).width;
+      flags.layoutHeight = (node as LayoutMixin).height;
+    }
+    if ("rotation" in node) {
+      flags.rotationDeg = (node as LayoutMixin).rotation;
+    }
+    if ("relativeTransform" in node) {
+      const m = (node as LayoutMixin).relativeTransform;
+      const det = m[0][0] * m[1][1] - m[0][1] * m[1][0];
+      if (det < 0) {
+        flags.flipHorizontal = m[0][0] < 0;
+        flags.flipVertical = m[1][1] < 0;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return flags;
+}
+
+function plannedFormat(node: SceneNode, format: ExportFormat): ExportFormat {
+  return hasImageFill(node) ? "PNG" : format;
+}
+
+function pathOnlyAsset(
+  node: SceneNode,
+  format: ExportFormat,
+  rel: string,
+): CachedAsset {
+  return {
+    path: rel,
+    mime: mimeFor(format, rel),
+    format: format === "SVG" ? "SVG" : "PNG",
+    effectsBaked: format === "SVG" || hasImageFill(node),
+    imageAssetFramed: hasImageFill(node) && format === "PNG",
+    ...nodeLayoutFlags(node),
+  };
+}
+
+/** Assign assets/* paths without calling exportAsync. */
+export function planAssetTargets(roots: readonly SceneNode[]): void {
+  clearAssetCache();
+  const cache = new Map<string, CachedAsset>();
+  const targets: Target[] = [];
+  for (const r of roots) collectExportTargets(r, targets);
+  for (const t of dedupeTargets(targets)) {
+    const format = plannedFormat(t.node, t.format);
+    const rel = assetRelPath(t.node, format);
+    cache.set(t.node.id, pathOnlyAsset(t.node, format, rel));
+  }
+  setAssetCache(cache);
+}
+
 async function exportImageNodePng(node: SceneNode): Promise<ExportResult> {
-  const pngAttempts: ExportSettingsImage[] = [
-    { format: "PNG", constraint: { type: "SCALE", value: 2 } },
-    { format: "PNG", constraint: { type: "SCALE", value: 1 } },
-  ];
+  const attempts = pngAttempts();
 
   // Prefer node-rendered PNG (scaleMode + effects). Clear rotation for framed size.
   const originalRotation =
@@ -407,9 +479,9 @@ async function exportImageNodePng(node: SceneNode): Promise<ExportResult> {
   try {
     return await withUnclippedAncestors(node, async () => {
       if ("children" in node && node.children.length > 0) {
-        return withHiddenChildren(node, () => trySettings(node, pngAttempts));
+        return withHiddenChildren(node, () => trySettings(node, attempts));
       }
-      return trySettings(node, pngAttempts);
+      return trySettings(node, attempts);
     });
   } finally {
     if (clearedRotation && "rotation" in node) {
@@ -426,10 +498,7 @@ async function exportNodeBytes(
   node: SceneNode,
   format: ExportFormat,
 ): Promise<ExportResult> {
-  const pngAttempts: ExportSettingsImage[] = [
-    { format: "PNG", constraint: { type: "SCALE", value: 2 } },
-    { format: "PNG", constraint: { type: "SCALE", value: 1 } },
-  ];
+  const attempts = pngAttempts();
   const svgAttempts: ExportSettingsSVGString[] = [
     { format: "SVG", svgIdAttribute: true } as any,
     { format: "SVG" } as any,
@@ -453,11 +522,11 @@ async function exportNodeBytes(
         trySettings(node, svgAttempts as ExportSettings[]),
       );
     } catch {
-      return withUnclippedAncestors(node, () => trySettings(node, pngAttempts));
+      return withUnclippedAncestors(node, () => trySettings(node, attempts));
     }
   }
 
-  return withUnclippedAncestors(node, () => trySettings(node, pngAttempts));
+  return withUnclippedAncestors(node, () => trySettings(node, attempts));
 }
 
 function dedupeTargets(targets: Target[]): Target[] {
@@ -541,20 +610,36 @@ async function serializeRoot(root: SceneNode): Promise<any> {
 }
 
 export type ZipExportResult = {
-  zipExport: ZipExportPayload;
+  folder: string;
+  assetCount: number;
+  failedCount: number;
   assetsMap: Record<string, string>;
+  rawDocument: unknown;
+  formatDrift: boolean;
 };
 
-/** Export all assets for selection roots, fill cache, build ZIP payload. */
+function postZipFile(path: string, bytes: Uint8Array): void {
+  postBackendMessage({
+    type: "zipFile",
+    path,
+    bytes,
+  } as ZipFileMessage);
+}
+
+/** Export assets, stream each file, keep path+flags only in cache. */
 export async function exportZipAssets(
   roots: readonly SceneNode[],
 ): Promise<ZipExportResult> {
-  clearAssetCache();
   const root = roots[0];
   if (!root) {
+    clearAssetCache();
     return {
-      zipExport: { folder: "export", files: {}, assetCount: 0, failedCount: 0 },
+      folder: "export",
+      assetCount: 0,
+      failedCount: 0,
       assetsMap: {},
+      rawDocument: {},
+      formatDrift: false,
     };
   }
 
@@ -576,66 +661,21 @@ export async function exportZipAssets(
   });
 
   const assetsMap: Record<string, string> = {};
-  const assetsB64: Record<string, string> = {};
   const cache = new Map<string, CachedAsset>();
   let failed = 0;
+  let formatDrift = false;
 
   for (let i = 0; i < unique.length; i++) {
-    let format = unique[i].format;
     const node = unique[i].node;
+    const planned = plannedFormat(node, unique[i].format);
     try {
-      if (hasImageFill(node)) format = "PNG";
-      const result = await exportNodeBytes(node, format);
-      format = (result.format as ExportFormat) || format;
-      const ext =
-        result.ext ||
-        (format === "SVG" ? ".svg" : format === "JPG" ? ".jpg" : ".png");
-      const rel = `assets/${safeSlug(node.name)}_${safeId(node.id)}${ext}`;
-      const b64 = uint8ToBase64(result.bytes);
+      const result = await exportNodeBytes(node, planned);
+      const actual: ExportFormat = result.format === "SVG" ? "SVG" : "PNG";
+      if (actual !== planned) formatDrift = true;
+      const rel = assetRelPath(node, actual);
       assetsMap[node.id] = rel;
-      assetsB64[rel] = b64;
-      const mime = mimeFor(format, rel);
-      const effectsBaked = format === "SVG" || hasImageFill(node);
-      const imageAssetFramed = hasImageFill(node) && format === "PNG";
-      let layoutWidth: number | undefined;
-      let layoutHeight: number | undefined;
-      let flipHorizontal: boolean | undefined;
-      let flipVertical: boolean | undefined;
-      let rotationDeg: number | undefined;
-      try {
-        if ("width" in node && "height" in node) {
-          layoutWidth = (node as LayoutMixin).width;
-          layoutHeight = (node as LayoutMixin).height;
-        }
-        if ("rotation" in node) {
-          rotationDeg = (node as LayoutMixin).rotation;
-        }
-        if ("relativeTransform" in node) {
-          const m = (node as LayoutMixin).relativeTransform;
-          // det < 0 ⇒ flip
-          const det = m[0][0] * m[1][1] - m[0][1] * m[1][0];
-          if (det < 0) {
-            flipHorizontal = m[0][0] < 0;
-            flipVertical = m[1][1] < 0;
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-      cache.set(node.id, {
-        path: rel,
-        mime,
-        bytes: result.bytes,
-        dataUrl: bytesToDataUrl(result.bytes, mime),
-        format: format === "SVG" ? "SVG" : "PNG",
-        effectsBaked,
-        imageAssetFramed,
-        layoutWidth,
-        layoutHeight,
-        flipHorizontal,
-        flipVertical,
-        rotationDeg,
-      });
+      postZipFile(rel, result.bytes);
+      cache.set(node.id, pathOnlyAsset(node, actual, rel));
     } catch (err) {
       failed += 1;
       console.warn("[zipAssets] export failed", node.id, node.name, err);
@@ -653,32 +693,18 @@ export async function exportZipAssets(
   setAssetCache(cache);
   const annotated = annotateDocument(document, assetsMap, cache);
 
-  const files: Record<string, string> = {
-    "figma_raw.json": uint8ToBase64(
-      utf8Encode(JSON.stringify(annotated, null, 2) + "\n"),
-    ),
-    "assets_map.json": uint8ToBase64(
-      utf8Encode(JSON.stringify(assetsMap, null, 2) + "\n"),
-    ),
-    ...assetsB64,
-  };
-
-  // Store JSON as utf-8 base64 — UI zip builder expects base64 for all files
-  // Fix: figma_raw / assets_map should be base64 of utf8 bytes (already above)
-
   postBackendMessage({
     type: "progress",
-    message: "Generating code…",
+    message: "Packaging files…",
     percent: 75,
   });
 
   return {
-    zipExport: {
-      folder: sanitizeFolder(root.name) || "export",
-      files,
-      assetCount: Object.keys(assetsMap).length,
-      failedCount: failed,
-    },
+    folder: sanitizeFolder(root.name) || "export",
+    assetCount: Object.keys(assetsMap).length,
+    failedCount: failed,
     assetsMap,
+    rawDocument: annotated,
+    formatDrift,
   };
 }

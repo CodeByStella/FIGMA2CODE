@@ -17,21 +17,20 @@ export interface PluginSettings extends HTMLSettings {
 }
 // Messaging
 export interface ConversionData {
-  code: string;
+  /** First lines of the generated document (full HTML stays in main) */
+  codePreview: string;
+  lineCount: number;
+  codeBytes: number;
   settings: PluginSettings;
   /** @deprecated Preview removed — kept optional for message compat */
   htmlPreview?: HTMLPreview;
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
   warnings: Warning[];
-  /** Optional ZIP payload for UI download (base64 files) */
-  zipExport?: ZipExportPayload;
 }
 
 export interface ZipExportPayload {
   folder: string;
-  /** Relative path → base64 */
-  files: Record<string, string>;
   assetCount: number;
   failedCount: number;
 }
@@ -69,16 +68,33 @@ export type ErrorMessage = Message & {
   error: string;
 };
 export type ZipStartMessage = Message & { type: "zipStart" };
-export type ZipReadyMessage = Message & {
-  type: "zipReady";
-  zipExport: ZipExportPayload;
+export type ZipFileMessage = Message & {
+  type: "zipFile";
+  path: string;
+  bytes: Uint8Array;
+};
+export type ZipDoneMessage = Message & {
+  type: "zipDone";
+  folder: string;
+  assetCount: number;
+  failedCount: number;
 };
 export type ZipErrorMessage = Message & {
   type: "zipError";
   error: string;
 };
-/** UI → plugin: build and return ZIP payload */
+/** UI → plugin: build and stream ZIP files */
 export type ExportZipMessage = Message & { type: "exportZip" };
+/** UI → plugin: send full HTML once for clipboard or expand */
+export type RequestFullCodeMessage = Message & {
+  type: "requestFullCode";
+  purpose: "copy" | "display";
+};
+export type FullCodeMessage = Message & {
+  type: "fullCode";
+  code: string;
+  purpose: "copy" | "display";
+};
 
 // Nodes
 export type ParentNode = BaseNode & ChildrenMixin;

@@ -1,19 +1,16 @@
 /**
- * In-memory asset bytes from ZIP export, reused when building HTML
- * so we do not call exportAsync twice per node.
+ * In-memory asset entries. Preview stores path + flags only.
+ * ZIP export adds bytes long enough to stream one file, then drops them.
  */
 
 export type CachedAsset = {
   path: string;
   mime: string;
-  /** raw bytes */
-  bytes: Uint8Array;
-  /** data URL for codegen embed */
-  dataUrl: string;
+  /** Present only while exporting / streaming a file */
+  bytes?: Uint8Array;
   format: "SVG" | "PNG" | "JPG" | "GIF" | "WEBP";
   effectsBaked: boolean;
   imageAssetFramed: boolean;
-  /** Unrotated layout size for framed IMAGE PNG + CSS rotate */
   layoutWidth?: number;
   layoutHeight?: number;
   flipHorizontal?: boolean;

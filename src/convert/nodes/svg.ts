@@ -64,7 +64,7 @@ export const renderAndAttachSVG = async (node: any) => {
 
     // Prefer SVG from ZIP asset cache (effects baked)
     const cached = node.id ? getCachedAsset(node.id) : undefined;
-    if (cached && cached.format === "SVG") {
+    if (cached && cached.format === "SVG" && cached.bytes) {
       try {
         node.svg = utf8Decode(cached.bytes);
         return node;

@@ -1,8 +1,12 @@
-import { run, exportZipPackage } from "./convert/run";
+import { run, exportZipPackage, getLastPreviewHtml } from "./convert/run";
 import { htmlMain, htmlCodeGenTextStyles } from "./convert/html/generate";
 import { nodesToJSON } from "./convert/nodes/toJson";
 import { postSettingsChanged } from "./messaging";
-import { PluginSettings, SettingWillChangeMessage } from "types";
+import {
+  PluginSettings,
+  RequestFullCodeMessage,
+  SettingWillChangeMessage,
+} from "types";
 
 let userPluginSettings: PluginSettings;
 
@@ -110,10 +114,9 @@ const safeRun = async (settings: PluginSettings) => {
     }
     figma.ui.postMessage({ type: "conversion-complete", success: false });
   } finally {
-    // Next frame so temporary visibility toggles during export don't re-enter.
     setTimeout(() => {
       isBusy = false;
-    }, 1);
+    }, 100);
   }
 };
 
@@ -138,7 +141,7 @@ const safeExportZip = async (settings: PluginSettings) => {
   } finally {
     setTimeout(() => {
       isBusy = false;
-    }, 1);
+    }, 100);
   }
 };
 
@@ -187,12 +190,27 @@ const exportSelectionJson = async (nodes: readonly SceneNode[]) => {
   return result;
 };
 
-const logSelectionJson = async () => {
-  const nodes = figma.currentPage.selection;
-  console.log("[DEBUG] selection JSON export - selection count:", nodes.length);
-  const data = await exportSelectionJson(nodes);
-  console.log("[selection-json]", JSON.stringify(data, null, 2));
-  return data;
+const DEBOUNCE_MS = 400;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+const scheduleRun = () => {
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    if (userPluginSettings) safeRun(userPluginSettings);
+  }, DEBOUNCE_MS);
+};
+
+const postFullCode = (purpose: "copy" | "display") => {
+  const html = getLastPreviewHtml();
+  if (!html) {
+    figma.ui.postMessage({
+      type: "error",
+      error: "No generated HTML to copy. Select a frame first.",
+    });
+    return;
+  }
+  figma.ui.postMessage({ type: "fullCode", code: html, purpose });
 };
 
 const standardMode = async () => {
@@ -208,49 +226,34 @@ const standardMode = async () => {
   };
 
   figma.on("selectionchange", () => {
-    console.log(
-      "[DEBUG] selectionchange event - New selection count:",
-      figma.currentPage.selection.length,
-    );
-    void logSelectionJson();
-    safeRun(userPluginSettings);
+    scheduleRun();
   });
 
-  figma.loadAllPagesAsync();
   figma.on("documentchange", () => {
-    console.log("[DEBUG] documentchange event triggered");
-    safeRun(userPluginSettings);
+    scheduleRun();
   });
 
   figma.ui.onmessage = async (msg) => {
-    console.log(
-      "[DEBUG] figma.ui.onmessage",
-      msg?.type ? `type=${msg.type}` : "unknown type",
-    );
-
     if (msg.type === "ui-ready") {
       await initializeOnce();
     } else if (msg.type === "pluginSettingWillChange") {
       const { key, value } = msg as SettingWillChangeMessage<unknown>;
-      console.log(`[DEBUG] Setting changed: ${key} = ${value}`);
       (userPluginSettings as any)[key] = value;
       figma.clientStorage.setAsync("userPluginSettings", userPluginSettings);
-      safeRun(userPluginSettings);
+      scheduleRun();
     } else if (msg.type === "exportZip") {
       await safeExportZip(userPluginSettings);
+    } else if (msg.type === "requestFullCode") {
+      const req = msg as RequestFullCodeMessage;
+      postFullCode(req.purpose === "display" ? "display" : "copy");
     } else if (msg.type === "get-selection-json") {
-      console.log("[DEBUG] get-selection-json message received");
-
       const nodeJson = await exportSelectionJson(figma.currentPage.selection);
-
       console.log(
         "[DEBUG] Exported node JSON:",
         "message" in nodeJson
           ? nodeJson.message
           : `jsonCount=${nodeJson.json?.length ?? 0}, newConversionCount=${nodeJson.newConversion?.length ?? 0}`,
       );
-      console.log("[selection-json]", JSON.stringify(nodeJson, null, 2));
-
       figma.ui.postMessage({
         type: "selection-json",
         data: nodeJson,

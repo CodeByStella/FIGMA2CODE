@@ -7,7 +7,8 @@ import { cn } from "../lib/utils";
 import { Button } from "../primitives/button";
 
 interface CopyButtonProps {
-  value: string;
+  value?: string;
+  onCopy?: () => void;
   className?: string;
   showLabel?: boolean;
   successDuration?: number;
@@ -17,6 +18,7 @@ interface CopyButtonProps {
 
 export function CopyButton({
   value,
+  onCopy,
   className,
   showLabel = true,
   successDuration = 1500,
@@ -33,12 +35,16 @@ export function CopyButton({
 
   const handleCopy = useCallback(() => {
     try {
-      copy(value);
+      if (onCopy) {
+        onCopy();
+      } else if (value) {
+        copy(value);
+      }
       setIsCopied(true);
     } catch (error) {
       console.error("Failed to copy text: ", error);
     }
-  }, [value]);
+  }, [onCopy, value]);
 
   return (
     <Button

@@ -29,6 +29,10 @@ const nodeNameCounters: Map<string, number> = new Map();
 
 const variableCache = new Map<string, string>();
 
+export const clearVariableCache = () => {
+  variableCache.clear();
+};
+
 /**
  * Maps variable IDs to color names and caches the result
  */

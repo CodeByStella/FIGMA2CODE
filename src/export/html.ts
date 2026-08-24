@@ -1,9 +1,6 @@
 import { PluginSettings } from "types";
 import { lockedHtmlSettings } from "../convert/settings";
 import { htmlMain } from "../convert/html/generate";
-import { getAllCachedAssets } from "./cache";
-import { utf8Encode } from "../shared/utf8";
-import { uint8ToBase64 } from "./cache";
 
 function escapeHtml(text: string): string {
   return String(text || "")
@@ -13,16 +10,9 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Replace any leftover data URLs with relative ZIP asset paths. */
+/** Preview already emits assets/* paths; leftover data URLs are not stored. */
 export function rewriteDataUrlsToRelativePaths(html: string): string {
-  let out = html;
-  for (const asset of getAllCachedAssets().values()) {
-    if (!asset.dataUrl || !asset.path) continue;
-    if (out.includes(asset.dataUrl)) {
-      out = out.split(asset.dataUrl).join(asset.path);
-    }
-  }
-  return out;
+  return html;
 }
 
 /**
@@ -56,8 +46,4 @@ ${body}
 </body>
 </html>
 `;
-}
-
-export function indexHtmlToZipBase64(html: string): string {
-  return uint8ToBase64(utf8Encode(html));
 }

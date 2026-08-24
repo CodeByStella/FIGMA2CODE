@@ -74,12 +74,12 @@ flowchart TD
   Colors --> Done["postConversionComplete (code only)"]
 
   Z["UI: Download ZIP"] --> Zip["exportZipPackage"]
-  Zip --> Assets["exportZipAssets → PNG/SVG + map"]
-  Assets --> Html["buildZipIndexHtml"]
-  Html --> Ready["post zipReady → browser download"]
+  Zip --> Assets["exportZipAssets → stream zipFile"]
+  Assets --> Html["reuse lastPreviewHtml or rebuild"]
+  Html --> Ready["zipDone → UI builds ZIP"]
 ```
 
-Selection / settings changes run **code preview only**. Asset export and ZIP packaging run **only when the user clicks Download ZIP**.
+Selection / settings changes run **code preview only** (planned `assets/*` paths, no `exportAsync` for images). Asset bytes stream to the UI **only when the user clicks Download ZIP**. The panel receives an HTML snippet; the full document stays in the main thread.
 
 ### ZIP package
 
@@ -95,17 +95,17 @@ Open `index.html` after extracting the ZIP to view a design-faithful HTML render
 
 Accuracy rules (ported for fidelity):
 
-| Rule                     | Behavior                                                           |
-| ------------------------ | ------------------------------------------------------------------ |
-| IMAGE fills              | Framed `exportAsync` PNG (not CSS `background-image` alone)        |
-| Vectors / shapes / icons | Baked SVG (`exportAsync` SVG)                                      |
-| Effects on export        | Unclip ancestors while exporting; mark `effectsBaked`              |
-| Conversion reuse         | Asset bytes come from `export/cache` — no second export for embeds |
-| CSS shadows              | Skip `box-shadow` when `effectsBaked` so shadows are not doubled   |
+| Rule                     | Behavior                                                         |
+| ------------------------ | ---------------------------------------------------------------- |
+| IMAGE fills              | Framed `exportAsync` PNG (not CSS `background-image` alone)      |
+| Vectors / shapes / icons | Baked SVG (`exportAsync` SVG)                                    |
+| Effects on export        | Unclip ancestors while exporting; mark `effectsBaked`            |
+| Conversion reuse         | Preview plans paths only; ZIP streams each file then drops bytes |
+| CSS shadows              | Skip `box-shadow` when `effectsBaked` so shadows are not doubled |
 
-UI: **Download ZIP** builds a browser ZIP from the `zipExport` payload (`src/ui/zip.ts`).
+UI: **Download ZIP** streams one file per `zipFile` message; `src/ui/zip.ts` builds the archive on `zipDone` and clears the buffers.
 
-`safeRun` in the plugin entry serializes runs (`isLoading`) so temporary visibility toggles during image export do not recurse via `documentchange`.
+`safeRun` serializes runs (`isBusy`). Selection and document changes are debounced (~400ms) so visibility/clip restores after export do not immediately re-convert.
 
 ---
 
@@ -183,30 +183,36 @@ sequenceDiagram
   Main->>UI: pluginSettingsChanged
   Main->>Backend: run(settings)
   Backend->>UI: conversionStart
-  Backend->>UI: progress (asset export)
-  Backend->>UI: code + zipExport | empty | error
+  Backend->>UI: codePreview snippet | empty | error
 
-  Note over Main: selectionchange / documentchange
+  Note over Main: selectionchange / documentchange debounce
   Main->>Backend: safeRun(settings)
 
-  UI->>Main: pluginSettingWillChange(key, value)
-  Main->>Main: persist clientStorage
-  Main->>Backend: safeRun(updated settings)
+  UI->>Main: exportZip
+  Backend->>UI: zipFile per asset
+  Backend->>UI: zipDone
+
+  UI->>Main: requestFullCode
+  Main->>UI: fullCode once
 ```
 
-| Direction | `type`                    | Meaning                                    |
-| --------- | ------------------------- | ------------------------------------------ |
-| UI → Main | `ui-ready`                | Handshake; init once                       |
-| UI → Main | `pluginSettingWillChange` | Preference update                          |
-| UI → Main | `get-selection-json`      | Debug dump of REST + conversion            |
-| Main → UI | `pluginSettingsChanged`   | Full settings push                         |
-| Main → UI | `conversionStart`         | Loading / status reset                     |
-| Main → UI | `progress`                | Asset export status text                   |
-| Main → UI | `code`                    | Conversion result (`ConversionData` + ZIP) |
-| Main → UI | `empty`                   | No selection / nothing convertible         |
-| Main → UI | `error`                   | Fatal user-facing error                    |
+| Direction | `type`                    | Meaning                                             |
+| --------- | ------------------------- | --------------------------------------------------- |
+| UI → Main | `ui-ready`                | Handshake; init once                                |
+| UI → Main | `pluginSettingWillChange` | Preference update                                   |
+| UI → Main | `exportZip`               | Start streamed ZIP export                           |
+| UI → Main | `requestFullCode`         | Copy or expand the full HTML document               |
+| UI → Main | `get-selection-json`      | Debug dump of REST + conversion                     |
+| Main → UI | `pluginSettingsChanged`   | Full settings push                                  |
+| Main → UI | `conversionStart`         | Loading / status reset                              |
+| Main → UI | `progress`                | Status text during ZIP export                       |
+| Main → UI | `code`                    | HTML snippet + counts (full document stays in main) |
+| Main → UI | `zipFile` / `zipDone`     | One ZIP file, then assemble + download              |
+| Main → UI | `fullCode`                | One-shot full HTML for copy or Show more            |
+| Main → UI | `empty`                   | No selection / nothing convertible                  |
+| Main → UI | `error`                   | Fatal user-facing error                             |
 
-`ConversionData.zipExport` carries base64 file map + asset counts for **Download ZIP**. `htmlPreview` on the message type is deprecated and unused by the panel.
+The panel does not keep the full HTML or ZIP bytes in React state. `htmlPreview` on the message type is deprecated and unused.
 
 ---
 
@@ -262,8 +268,8 @@ flowchart TD
   FX["Gradients / effects"] --> HTML["HTML CSS builders"]
   HTML --> Warn["addWarning if unsupported"]
 
-  Assets["Vectors / images"] --> ZipFirst["ZIP export + cache"]
-  ZipFirst --> Inline["SVG / Base64 inline in code"]
+  Assets["Vectors / images"] --> ZipFirst["ZIP export on download"]
+  ZipFirst --> Paths["assets/* paths in HTML"]
   ZipFirst --> Flags["effectsBaked / framed image flags"]
   Flags --> SkipDup["Skip CSS box-shadow when baked"]
 ```
