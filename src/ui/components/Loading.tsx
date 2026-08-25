@@ -17,7 +17,7 @@ const Loading = ({ statusMessage, progressPercent }: LoadingProps) => {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center">
       {/* Code editor frame */}
-      <div className="mb-5 w-full max-w-[260px] overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-800">
+      <div className="mb-5 w-full max-w-65 overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-800">
         {/* Title bar */}
         <div className="flex items-center gap-1.5 border-b border-neutral-200 px-3 py-2.5 dark:border-neutral-700">
           <div className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600" />
@@ -26,7 +26,7 @@ const Loading = ({ statusMessage, progressPercent }: LoadingProps) => {
         </div>
 
         {/* Shimmer code lines */}
-        <div className="flex flex-col gap-[10px] px-4 py-4">
+        <div className="flex flex-col gap-2.5 px-4 py-4">
           <div className="flex items-center gap-2">
             <div className="h-1.5 w-3 rounded-full bg-neutral-300 dark:bg-neutral-700" />
             <div className="h-1.5 w-16 animate-pulse rounded-full bg-green-400/80" />
@@ -80,7 +80,7 @@ const Loading = ({ statusMessage, progressPercent }: LoadingProps) => {
       <p className="text-[15px] font-medium text-neutral-800 dark:text-neutral-200">
         {statusMessage || "Generating code…"}
       </p>
-      <div className="mt-3 h-1.5 w-full max-w-[220px] overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
+      <div className="mt-3 h-1.5 w-full max-w-55 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-700">
         <div
           className={`h-full rounded-full bg-primary transition-[width] duration-200 ease-out ${
             hasPercent ? "" : "w-1/3 animate-pulse"
