@@ -1,3 +1,7 @@
+/**
+ * Shared TypeScript contracts for the plugin main thread, UI iframe, and
+ * convert pipeline (settings, messages, node shapes, layout, colors).
+ */
 import "@figma/plugin-typings";
 
 export * from "./settings";

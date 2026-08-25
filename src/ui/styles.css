@@ -1,3 +1,4 @@
+/** Tailwind v4 theme tokens and base styles for the plugin UI iframe. */
 @import "tailwindcss";
 
 @source './**/*.{js,ts,jsx,tsx}';
@@ -133,9 +134,6 @@ body {
   * {
     @apply border-border outline-ring/50;
   }
-  /* body {
-    @apply bg-background text-foreground;
-  } */
   button:not([disabled]),
   [role="button"]:not([disabled]) {
     cursor: pointer;

@@ -1,9 +1,9 @@
 import React from "react";
 
+/** Placeholder when nothing is selected; prompts frame selection or ZIP download. */
 const EmptyState = () => {
   return (
     <div className="flex w-full flex-col items-center justify-center px-4 py-12 text-center">
-      {/* Illustration: a Figma-style selection box turning into code */}
       <div className="mb-4 text-neutral-700 dark:text-neutral-200">
         <svg
           width="184"
@@ -14,7 +14,6 @@ const EmptyState = () => {
           className="drop-shadow-sm"
           aria-hidden="true"
         >
-          {/* Layer rectangle with selection handles */}
           <rect
             x="8"
             y="16"
@@ -26,7 +25,6 @@ const EmptyState = () => {
             strokeDasharray="4 3"
             className="text-green-400"
           />
-          {/* Selection handles */}
           <rect
             x="5"
             y="13"
@@ -60,7 +58,6 @@ const EmptyState = () => {
             className="fill-green-400"
           />
 
-          {/* Inner content lines (representing layer content) */}
           <rect
             x="18"
             y="30"
@@ -94,7 +91,6 @@ const EmptyState = () => {
             className="fill-neutral-400 dark:fill-neutral-500"
           />
 
-          {/* Arrow */}
           <path
             d="M72 48 L84 48"
             stroke="currentColor"
@@ -111,7 +107,6 @@ const EmptyState = () => {
             className="text-neutral-500 dark:text-neutral-400"
           />
 
-          {/* Code block */}
           <rect
             x="92"
             y="20"
@@ -121,7 +116,6 @@ const EmptyState = () => {
             className="fill-neutral-900 stroke-neutral-700 dark:fill-neutral-800 dark:stroke-neutral-600"
             strokeWidth="1"
           />
-          {/* Code lines */}
           <rect
             x="100"
             y="32"
@@ -165,7 +159,6 @@ const EmptyState = () => {
         </svg>
       </div>
 
-      {/* Copy */}
       <h3 className="text-[15px] font-medium text-neutral-800 dark:text-neutral-200">
         Nothing selected
       </h3>

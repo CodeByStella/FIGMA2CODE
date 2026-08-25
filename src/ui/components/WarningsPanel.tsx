@@ -1,3 +1,4 @@
+/** Collapsible list of conversion warnings with severity tabs and doc links. */
 import React, { useState } from "react";
 import {
   AlertTriangle,
@@ -14,7 +15,7 @@ interface WarningsPanelProps {
   warnings: Warning[];
 }
 
-// Helper function to categorize warnings by severity
+/** Heuristic severity split for conversion warnings surfaced in the UI. */
 const categorizeWarnings = (warnings: Warning[]) => {
   const critical = warnings.filter(
     (w) =>
@@ -45,7 +46,6 @@ const WarningsPanel: React.FC<WarningsPanelProps> = ({ warnings }) => {
 
   return (
     <div className="bg-white dark:bg-neutral-800 border border-amber-200 dark:border-amber-700 rounded-md shadow-2xs overflow-hidden w-full">
-      {/* Header - medium size */}
       <div
         className="flex items-center justify-between py-2 px-3 border-b border-amber-100 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 cursor-pointer hover:bg-amber-100/70 dark:hover:bg-amber-900/30 transition-colors"
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -73,10 +73,8 @@ const WarningsPanel: React.FC<WarningsPanelProps> = ({ warnings }) => {
         </button>
       </div>
 
-      {/* Warning content - balanced size */}
       {!isCollapsed && (
         <div className="p-2.5">
-          {/* Tabs - medium size */}
           {critical.length > 0 && standard.length > 0 && (
             <div className="flex mb-2 bg-neutral-100 dark:bg-neutral-800 p-0.5 rounded-sm">
               <button
@@ -114,7 +112,6 @@ const WarningsPanel: React.FC<WarningsPanelProps> = ({ warnings }) => {
             </div>
           )}
 
-          {/* Warning list - balanced size */}
           <div className="space-y-1.5 max-h-[200px] overflow-y-auto pb-0.5">
             {displayedWarnings.map((message, index) => {
               const isCritical = critical.includes(message);
@@ -154,7 +151,6 @@ const WarningsPanel: React.FC<WarningsPanelProps> = ({ warnings }) => {
                         {message.toString()}
                       </p>
 
-                      {/* Suggested fix - balanced size */}
                       {isCritical && (
                         <div className="mt-1 bg-white/70 dark:bg-black/20 rounded-sm py-1 px-2 text-neutral-600 dark:text-neutral-400 border-l border-red-300 dark:border-red-500 text-xs">
                           <span className="font-medium">Tip: </span>
@@ -163,7 +159,6 @@ const WarningsPanel: React.FC<WarningsPanelProps> = ({ warnings }) => {
                       )}
                     </div>
 
-                    {/* Action link - balanced size */}
                     {shouldShowActionButtons(message.toString()) && (
                       <a
                         href={getDocsLinkForWarning(message.toString())}
@@ -181,10 +176,8 @@ const WarningsPanel: React.FC<WarningsPanelProps> = ({ warnings }) => {
             })}
           </div>
 
-          {/* Help text - balanced size */}
           {displayedWarnings.length > 0 && (
             <div className="mt-2 py-1 px-1 text-xs text-neutral-500 dark:text-neutral-400 bg-neutral-50 dark:bg-neutral-800/50 rounded-sm border-neutral-200 dark:border-neutral-700 flex items-center gap-1.5">
-              {/* <Info size={10} className="shrink-0" /> */}
               <span>
                 Addressing warnings can improve the quality of the generated
                 code.
@@ -197,7 +190,6 @@ const WarningsPanel: React.FC<WarningsPanelProps> = ({ warnings }) => {
   );
 };
 
-// Helper functions (these would be expanded with actual logic in your implementation)
 const suggestFixForWarning = (warning: string): string => {
   if (warning.toLowerCase().includes("missing")) {
     return "Add the required properties to your component or select a parent element that includes all necessary children.";
@@ -209,7 +201,6 @@ const suggestFixForWarning = (warning: string): string => {
 };
 
 const shouldShowActionButtons = (warning: string): boolean => {
-  // Example condition - you would customize this based on your specific warnings
   return (
     warning.toLowerCase().includes("unsupported") ||
     warning.toLowerCase().includes("missing")
@@ -217,7 +208,6 @@ const shouldShowActionButtons = (warning: string): boolean => {
 };
 
 const getDocsLinkForWarning = (warning: string): string => {
-  // Example URLs - in reality you would point to specific documentation pages
   if (warning.toLowerCase().includes("unsupported")) {
     return "https://github.com/bernaferrari/figma-to-code/wiki/Supported-Elements";
   }

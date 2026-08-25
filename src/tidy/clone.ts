@@ -1,3 +1,5 @@
+/** Creates an off-source clone for tidy; source selection stays untouched for convert rollback. */
+
 import type { ResolvedTarget } from "./target";
 import { Rect, parentAbsRect, unionRect } from "./geometry";
 import { PLUGIN_DATA_CLONE, PLUGIN_DATA_SOURCE, TIDY_GAP } from "./types";
@@ -35,8 +37,8 @@ async function removePreviousClone(source: SceneNode): Promise<void> {
   if (existing) {
     try {
       if (existing.parent) existing.remove();
-    } catch (e) {
-      console.warn("[tidy] failed to remove previous clone", e);
+    } catch {
+      // Prior clone may already be missing from the document.
     }
   }
   source.setPluginData(PLUGIN_DATA_CLONE, "");
@@ -55,8 +57,8 @@ function placeOnPage(node: SceneNode, origin: Rect): void {
 }
 
 /**
- * Clone a COMPONENT main into a plain FRAME with cloned children
- * (do not duplicate the main component).
+ * Duplicate a component main as a plain frame so tidy can restructure without
+ * creating a second component definition.
  */
 function cloneComponentAsFrame(component: ComponentNode): FrameNode {
   const frame = figma.createFrame();
@@ -133,7 +135,7 @@ function wrapNodesInFrame(
 }
 
 /**
- * Build the visible tidied clone on the current page and return its root.
+ * Place the tidied clone beside the source via pluginData links so repeat runs replace the old clone.
  */
 export async function createTidyClone(
   target: ResolvedTarget,

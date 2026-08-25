@@ -1,10 +1,9 @@
 /*
- * This is a wrapper for exportAsync() so callers share one place for
- * getNodeByIdAsync + format typing. Loading / progress is owned by run()
- * and zipAssets (conversionStart + progress messages).
+ * Shared exportAsync entry: resolves live node by id, guards empty/invisible nodes,
+ * and enforces timeouts. Progress UI is owned by run.ts / ZIP export, not here.
  */
 
-/** Figma can throw or hang on empty / invisible vectors. Never wait forever. */
+/** Figma can hang on zero-size or invisible nodes; cap wait time for SVG/PNG export. */
 export const EXPORT_TIMEOUT_MS = 8000;
 
 export const withTimeout = <T>(
@@ -66,7 +65,6 @@ export const exportAsyncProxy = async <
 
   const label = `${figmaNode.type}:${figmaNode.id} ${settings.format}`;
 
-  // The following is necessary for typescript to not lose its mind.
   let result;
   if (settings.format === "SVG_STRING") {
     result = await withTimeout(

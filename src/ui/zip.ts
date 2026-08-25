@@ -1,3 +1,7 @@
+/**
+ * Assembles a store ZIP in the UI iframe from zipFile chunks posted by the
+ * main thread, then triggers a browser download (index.html + assets/*).
+ */
 export function coerceIncomingBytes(data: unknown): Uint8Array | null {
   if (!data) return null;
   if (data instanceof Uint8Array) return data;
@@ -121,7 +125,7 @@ function buildStoreZip(files: { name: string; data: Uint8Array }[]): Blob {
   ]);
 
   const bytes = concat([...locals, centralBlob, end]);
-  // Copy into a real ArrayBuffer — TS BlobPart rejects SharedArrayBuffer views
+  /** BlobPart rejects SharedArrayBuffer-backed views; copy into a plain ArrayBuffer */
   const ab = bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
@@ -136,7 +140,7 @@ function sanitizeFolder(name: string): string {
     .slice(0, 60);
 }
 
-/** Build CRC-32 store ZIP from streamed files and trigger download. */
+/** Pack streamed files into a ZIP and start a download named after the frame folder. */
 export function downloadZipFromFiles(
   folder: string,
   filesByPath: Map<string, Uint8Array | ArrayBuffer>,

@@ -1,12 +1,13 @@
 /**
- * In-memory asset entries. Preview stores path + flags only.
- * ZIP export adds bytes long enough to stream one file, then drops them.
+ * In-memory asset cache keyed by node id. Live preview keeps paths and export
+ * flags only; ZIP export attaches bytes long enough to stream each file to the
+ * UI, then drops them to limit main-thread memory.
  */
 
 export type CachedAsset = {
   path: string;
   mime: string;
-  /** Present only while exporting / streaming a file */
+  /** Raw file bytes; present only while a ZIP chunk is being streamed */
   bytes?: Uint8Array;
   format: "SVG" | "PNG" | "JPG" | "GIF" | "WEBP";
   effectsBaked: boolean;

@@ -20,7 +20,7 @@ export const htmlPadding = (
 
   let comp: string[] = [];
 
-  // horizontal and vertical, as the default AutoLayout
+  // Figma paired horizontal/vertical padding → four CSS sides.
   if ("horizontal" in padding) {
     if (padding.horizontal !== 0) {
       comp.push(formatWithJSX("padding-left", isJsx, padding.horizontal));
@@ -45,7 +45,6 @@ export const htmlPadding = (
   if (padding.right !== 0) {
     comp.push(formatWithJSX("padding-right", isJsx, padding.right));
   }
-  // todo use REM
 
   return comp;
 };

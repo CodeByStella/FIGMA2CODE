@@ -1,3 +1,7 @@
+/**
+ * postMessage payload types between the Figma main thread and the UI iframe
+ * (conversion results, ZIP streaming, settings, OpenRouter key status).
+ */
 import { LinearGradientConversion, SolidColorConversion } from "./color";
 import { PluginSettings } from "./settings";
 
@@ -7,12 +11,12 @@ export interface HTMLPreview {
 }
 
 export interface ConversionData {
-  /** First lines of the generated document (full HTML stays in main) */
+  /** Head preview only; full HTML stays on the main thread until copy/display */
   codePreview: string;
   lineCount: number;
   codeBytes: number;
   settings: PluginSettings;
-  /** @deprecated Preview removed — kept optional for message compat */
+  /** Legacy iframe preview payload; optional for backward-compatible messages */
   htmlPreview?: HTMLPreview;
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
@@ -75,6 +79,14 @@ export type ZipErrorMessage = Message & {
 };
 export type ExportZipMessage = Message & { type: "exportZip" };
 export type TidyAndConvertMessage = Message & { type: "tidyAndConvert" };
+export type SetOpenRouterKeyMessage = Message & {
+  type: "setOpenRouterKey";
+  key: string;
+};
+export type OpenRouterKeyStatusMessage = Message & {
+  type: "openRouterKeyStatus";
+  hasKey: boolean;
+};
 export type RequestFullCodeMessage = Message & {
   type: "requestFullCode";
   purpose: "copy" | "display";

@@ -1,3 +1,4 @@
+/** About tab: privacy copy, OpenRouter key entry (clientStorage on main thread), debug JSON export. */
 import { useState } from "react";
 import {
   ArrowRightIcon,
@@ -19,21 +20,26 @@ import { cn } from "../lib/utils";
 
 type AboutProps = {
   useOldPluginVersion?: boolean;
+  hasOpenRouterKey?: boolean;
   onPreferenceChanged: (
     key: keyof PluginSettings,
     value: PluginSettings[keyof PluginSettings],
   ) => void;
+  onSaveOpenRouterKey?: (key: string) => void;
 };
 
 const About = ({
   useOldPluginVersion = false,
+  hasOpenRouterKey = false,
   onPreferenceChanged,
+  onSaveOpenRouterKey,
 }: AboutProps) => {
   const [copied, setCopied] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [keySavedFlash, setKeySavedFlash] = useState(false);
 
   const copySelectionJson = async () => {
     try {
-      // Send message to the plugin to get selection JSON
       parent.postMessage(
         { pluginMessage: { type: "get-selection-json" } },
         "*",
@@ -41,18 +47,22 @@ const About = ({
 
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error("Failed to copy selection JSON:", error);
-    }
+    } catch {}
   };
 
   const togglePluginVersion = () => {
     onPreferenceChanged("useOldPluginVersion2025", !useOldPluginVersion);
   };
 
+  const saveApiKey = () => {
+    onSaveOpenRouterKey?.(apiKeyDraft);
+    setApiKeyDraft("");
+    setKeySavedFlash(true);
+    setTimeout(() => setKeySavedFlash(false), 2000);
+  };
+
   return (
     <div className="flex flex-col p-5 gap-6 text-sm max-w-2xl mx-auto">
-      {/* Header Section with Logo and Title */}
       <div className="flex flex-col items-center text-center mb-2">
         <div className="w-16 h-16 bg-linear-to-br from-green-400 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg mb-3">
           <Code size={32} className="text-white" />
@@ -85,9 +95,7 @@ const About = ({
         </div>
       </div>
 
-      {/* Cards Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Privacy Policy Card */}
         <Card className="border-neutral-200 py-0 transition-colors hover:border-green-300 dark:border-neutral-700 dark:hover:border-green-700">
           <CardContent className="p-5">
             <div className="flex items-center gap-3 mb-3">
@@ -104,7 +112,6 @@ const About = ({
           </CardContent>
         </Card>
 
-        {/* Open Source Card */}
         <Card className="border-neutral-200 py-0 transition-colors hover:border-green-300 dark:border-neutral-700 dark:hover:border-green-700">
           <CardContent className="p-5">
             <div className="flex items-center gap-3 mb-3">
@@ -132,7 +139,6 @@ const About = ({
           </CardContent>
         </Card>
 
-        {/* Features Card */}
         <Card className="border-neutral-200 py-0 transition-colors hover:border-green-300 dark:border-neutral-700 dark:hover:border-green-700">
           <CardContent className="p-5">
             <div className="flex items-center gap-3 mb-3">
@@ -164,7 +170,6 @@ const About = ({
           </CardContent>
         </Card>
 
-        {/* Contact Card */}
         <Card className="border-neutral-200 py-0 transition-colors hover:border-green-300 dark:border-neutral-700 dark:hover:border-green-700">
           <CardContent className="p-5">
             <div className="flex items-center gap-3 mb-3">
@@ -193,7 +198,57 @@ const About = ({
           </CardContent>
         </Card>
 
-        {/* Debug Helper Card */}
+        <Card className="border-neutral-200 py-0 transition-colors hover:border-green-300 dark:border-neutral-700 dark:hover:border-green-700 md:col-span-2">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2 bg-cyan-100 dark:bg-cyan-900/40 rounded-lg">
+                <Zap size={20} className="text-cyan-600 dark:text-cyan-400" />
+              </div>
+              <h3 className="font-semibold text-base">
+                OpenRouter (Tidy + AI)
+              </h3>
+            </div>
+            <p className="text-neutral-600 dark:text-neutral-300 leading-relaxed mb-3">
+              Tidy + Convert uses a vision model via OpenRouter (
+              <code className="text-xs">xiaomi/mimo-v2.5</code>). Your key stays
+              in Figma client storage on this machine and is never logged in
+              full.
+            </p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+              Status:{" "}
+              {hasOpenRouterKey ? (
+                <span className="text-green-600 dark:text-green-400">
+                  Key saved
+                </span>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">
+                  No key — Tidy + Convert disabled
+                </span>
+              )}
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                type="password"
+                autoComplete="off"
+                placeholder={
+                  hasOpenRouterKey ? "Enter new key to replace…" : "sk-or-v1-…"
+                }
+                value={apiKeyDraft}
+                onChange={(e) => setApiKeyDraft(e.target.value)}
+                className="flex-1 h-8 rounded-md border border-neutral-200 dark:border-neutral-600 bg-background px-2 text-xs"
+              />
+              <Button
+                size="sm"
+                className="h-8 shrink-0"
+                disabled={!apiKeyDraft.trim() || !onSaveOpenRouterKey}
+                onClick={saveApiKey}
+              >
+                {keySavedFlash ? "Saved" : "Save key"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="border-neutral-200 py-0 transition-colors hover:border-green-300 dark:border-neutral-700 dark:hover:border-green-700">
           <CardContent className="p-5">
             <div className="flex items-center gap-3 mb-3">
@@ -223,7 +278,6 @@ const About = ({
               )}
             </Button>
 
-            {/* Hidden setting for using old plugin version */}
             <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
               <button
                 onClick={togglePluginVersion}
@@ -246,7 +300,6 @@ const About = ({
         </Card>
       </div>
 
-      {/* Footer */}
       <div className="mt-2 text-center text-neutral-500 dark:text-neutral-400 text-xs">
         <p>
           © {new Date().getFullYear()} Bernardo Ferrari. All rights reserved.

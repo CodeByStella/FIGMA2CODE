@@ -31,7 +31,7 @@ flowchart TB
 | `src/plugin.ts` | Entry: settings, selection listeners, codegen mode, calls `run()` |
 | `src/convert/`  | Node processing + HTML + CSS emitter                              |
 | `src/export/`   | Asset ZIP                                                         |
-| `src/tidy/`     | Phase 1: clone + infer Auto Layout before convert                 |
+| `src/tidy/`     | Clone + AI sections + Auto Layout tidy before convert             |
 | `src/ui/`       | Panel: code, ZIP download, colors                                 |
 | `src/types/`    | Shared `PluginSettings`, messages, and node types                 |
 
@@ -110,18 +110,23 @@ UI: **Download ZIP** streams one file per `zipFile` message; `src/ui/zip.ts` bui
 
 ---
 
-## Tidy + Convert (Phase 1)
+## Tidy + Convert (Phase 1 + AI vision)
 
 Button-only path (`tidyAndConvert`). Does **not** run on every `selectionchange`.
+
+Requires an **OpenRouter API key** (About panel → saved in `figma.clientStorage` as `openRouterApiKey`). Manifest allows `https://openrouter.ai` only.
 
 ```mermaid
 flowchart TD
   UI["UI: Tidy + Convert"] --> Msg["plugin.ts: tidyAndConvert"]
-  Msg --> Guard["isBusy + isTidying"]
+  Msg --> Guard["isBusy + isTidying + hasKey"]
   Guard --> Target["resolve selection or page"]
   Target --> Clone["clone to the right of original"]
-  Clone --> Plan["buildTidyPlan"]
-  Plan --> Apply["applyTidyPlan on clone"]
+  Clone --> Shot["PNG screenshot + layer inventory"]
+  Shot --> AI["OpenRouter xiaomi/mimo-v2.5"]
+  AI --> Sec["section frames by Y + renames"]
+  Sec --> Plan["buildTidyPlan"]
+  Plan --> Apply["applyTidyPlan + pixel restore"]
   Apply --> Sel["select clone"]
   Sel --> Run["run() existing converter"]
 ```
@@ -131,8 +136,23 @@ flowchart TD
 1. Resolves target: current selection, or (if empty) all visible top-level layers on the current page.
 2. Clones onto the current page, placed to the right of the original bbox (`gap = 80`). Name: `{original} / tidied`.
 3. Plugin data links source ↔ clone (`tidySourceId` / `tidyCloneId`). Re-running replaces the previous clone.
-4. Infers Auto Layout on **freeform** frames/groups in the clone only; original is untouched.
-5. Selects the clone and runs the normal HTML converter.
+4. Captures a PNG of the clone + compact inventory; calls OpenRouter vision for `splitLinesY`, section names, and renames.
+5. Assigns **direct children** to sections by center Y (geometry), creates section frames, applies renames.
+6. Infers Auto Layout on freeform structure (pixel-preserve revert if layout drifts); original is untouched.
+7. Selects the clone and runs the normal HTML converter.
+
+### AI failure modes
+
+| Case                  | Behavior                                            |
+| --------------------- | --------------------------------------------------- |
+| No API key            | Error; Tidy button disabled in UI                   |
+| OpenRouter HTTP error | Abort; remove clone if created                      |
+| Invalid model JSON    | Warning; skip AI sections; geometry tidy still runs |
+| Fewer than 2 sections | Skip wrappers; geometry tidy only                   |
+
+### Debug console
+
+Console logging is currently disabled. Add selective `console` / `aiLog` calls when you need them.
 
 ### Skip rules
 
@@ -145,7 +165,7 @@ flowchart TD
 | Rotated / overlapping decorative / overlays | Prefer `layoutPositioning = ABSOLUTE` over a wrong flex stack            |
 | Codegen mode                                | No tidy                                                                  |
 
-Inference lives in `src/tidy/infer.ts` (plan only); Figma writes live in `src/tidy/apply.ts` and `src/tidy/clone.ts`.
+Inference: `src/tidy/infer.ts`. AI: `src/tidy/ai/`. Writes: `src/tidy/apply.ts`, `src/tidy/clone.ts`, `src/tidy/ai/sections.ts`.
 
 ### Phase 2 (not implemented)
 
@@ -245,10 +265,12 @@ sequenceDiagram
 | UI → Main | `ui-ready`                | Handshake; init once                                |
 | UI → Main | `pluginSettingWillChange` | Preference update                                   |
 | UI → Main | `exportZip`               | Start streamed ZIP export                           |
-| UI → Main | `tidyAndConvert`          | Clone + Auto Layout tidy, then convert the clone    |
+| UI → Main | `tidyAndConvert`          | AI sections + Auto Layout tidy, then convert        |
+| UI → Main | `setOpenRouterKey`        | Save OpenRouter API key to clientStorage            |
 | UI → Main | `requestFullCode`         | Copy or expand the full HTML document               |
 | UI → Main | `get-selection-json`      | Debug dump of REST + conversion                     |
 | Main → UI | `pluginSettingsChanged`   | Full settings push                                  |
+| Main → UI | `openRouterKeyStatus`     | `{ hasKey }` so UI can enable Tidy + Convert        |
 | Main → UI | `conversionStart`         | Loading / status reset                              |
 | Main → UI | `progress`                | Status text (tidy or ZIP export)                    |
 | Main → UI | `code`                    | HTML snippet + counts (full document stays in main) |
@@ -325,18 +347,18 @@ Warnings are accumulated in a module-level set (`src/convert/warnings.ts`) and r
 
 ## Key source map
 
-| Concern                | Location                                     |
-| ---------------------- | -------------------------------------------- |
-| Plugin entry & modes   | `src/plugin.ts`                              |
-| Orchestration `run`    | `src/convert/run.ts`                         |
-| Tidy + Auto Layout     | `src/tidy/`                                  |
-| ZIP + asset export     | `src/export/zip.ts`                          |
-| Asset cache / flags    | `src/export/cache.ts`, `src/export/flags.ts` |
-| JSON → processed nodes | `src/convert/nodes/toJson.ts`                |
-| Static HTML document   | `src/export/html.ts`                         |
-| HTML codegen           | `src/convert/html/generate.ts`               |
-| Locked export settings | `src/convert/settings.ts`                    |
-| Plugin → UI messages   | `src/messaging.ts`                           |
-| Panel + ZIP / Tidy     | `src/ui/PluginUI.tsx`                        |
-| ZIP download helper    | `src/ui/zip.ts`                              |
-| Types                  | `src/types/`                                 |
+| Concern                 | Location                                     |
+| ----------------------- | -------------------------------------------- |
+| Plugin entry & modes    | `src/plugin.ts`                              |
+| Orchestration `run`     | `src/convert/run.ts`                         |
+| Tidy + AI + Auto Layout | `src/tidy/`, `src/tidy/ai/`                  |
+| ZIP + asset export      | `src/export/zip.ts`                          |
+| Asset cache / flags     | `src/export/cache.ts`, `src/export/flags.ts` |
+| JSON → processed nodes  | `src/convert/nodes/toJson.ts`                |
+| Static HTML document    | `src/export/html.ts`                         |
+| HTML codegen            | `src/convert/html/generate.ts`               |
+| Locked export settings  | `src/convert/settings.ts`                    |
+| Plugin → UI messages    | `src/messaging.ts`                           |
+| Panel + ZIP / Tidy      | `src/ui/PluginUI.tsx`                        |
+| ZIP download helper     | `src/ui/zip.ts`                              |
+| Types                   | `src/types/`                                 |

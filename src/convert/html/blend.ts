@@ -2,19 +2,12 @@ import { numberToFixedString } from "../css/numbers";
 import { formatWithJSX } from "../css/format";
 import { RestAltNode } from "types";
 
-/**
- * https://tailwindcss.com/docs/opacity/
- * default is [0, 25, 50, 75, 100], but '100' will be ignored:
- * if opacity was changed, let it be visible. Therefore, 98% => 75
- * node.opacity is between [0, 1]; output will be [0, 100]
- */
+/** Node opacity [0,1] → CSS opacity when not fully opaque. */
 export const htmlOpacity = (
   node: MinimalBlendMixin,
   isJsx: boolean,
 ): string => {
-  // [when testing] node.opacity can be undefined
   if (node.opacity !== undefined && node.opacity !== 1) {
-    // formatWithJSX is not called here because opacity unit doesn't end in px.
     if (isJsx) {
       return `opacity: ${numberToFixedString(node.opacity)}`;
     } else {
@@ -86,29 +79,20 @@ export const htmlBlendMode = (
 };
 
 /**
- * https://tailwindcss.com/docs/visibility/
- * example: invisible
+ * Hidden Figma layers stay in the tree for group masks; emit visibility:hidden
+ * rather than stripping fills (which breaks nested structure).
  */
 export const htmlVisibility = (
   node: SceneNodeMixin,
   isJsx: boolean,
 ): string => {
-  // [when testing] node.visible can be undefined
-
-  // When something is invisible in Figma, it isn't gone. Groups can make use of it.
-  // Therefore, instead of changing the visibility (which causes bugs in nested divs),
-  // this plugin is going to ignore color and stroke
   if (node.visible !== undefined && !node.visible) {
     return formatWithJSX("visibility", isJsx, "hidden");
   }
   return "";
 };
 
-/**
- * https://tailwindcss.com/docs/rotate/
- * default is [-180, -90, -45, 0, 45, 90, 180], but '0' will be ignored:
- * if rotation was changed, let it be perceived. Therefore, 1 => 45
- */
+/** Apply cumulativeRotation from GROUP inlining plus node rotation for CSS transform. */
 export const htmlRotation = (node: RestAltNode, isJsx: boolean): string[] => {
   const rotation =
     -Math.round((node.rotation || 0) + (node.cumulativeRotation || 0)) || 0;

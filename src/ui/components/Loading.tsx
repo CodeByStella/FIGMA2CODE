@@ -1,5 +1,6 @@
 import React from "react";
 
+/** Shown while the main thread converts selection or streams ZIP export progress. */
 type LoadingProps = {
   statusMessage?: string;
   progressPercent?: number | null;
@@ -16,16 +17,13 @@ const Loading = ({ statusMessage, progressPercent }: LoadingProps) => {
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center">
-      {/* Code editor frame */}
       <div className="mb-5 w-full max-w-65 overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-800">
-        {/* Title bar */}
         <div className="flex items-center gap-1.5 border-b border-neutral-200 px-3 py-2.5 dark:border-neutral-700">
           <div className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600" />
           <div className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600" />
           <div className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-600" />
         </div>
 
-        {/* Shimmer code lines */}
         <div className="flex flex-col gap-2.5 px-4 py-4">
           <div className="flex items-center gap-2">
             <div className="h-1.5 w-3 rounded-full bg-neutral-300 dark:bg-neutral-700" />
@@ -76,7 +74,6 @@ const Loading = ({ statusMessage, progressPercent }: LoadingProps) => {
         </div>
       </div>
 
-      {/* Text */}
       <p className="text-[15px] font-medium text-neutral-800 dark:text-neutral-200">
         {statusMessage || "Generating code…"}
       </p>

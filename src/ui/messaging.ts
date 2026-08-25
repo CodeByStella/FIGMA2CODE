@@ -1,3 +1,6 @@
+/**
+ * postMessage helpers from the UI iframe to the Figma plugin main thread.
+ */
 import { Message, SettingWillChangeMessage, UIMessage } from "types";
 
 if (!parent || !parent.postMessage) {

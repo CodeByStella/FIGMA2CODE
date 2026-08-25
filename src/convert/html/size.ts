@@ -55,7 +55,7 @@ export const htmlSizePartial = (
     }
   }
 
-  // Handle min/max width/height constraints
+  // Figma min/max constraints become separate CSS properties, not merged into width/height.
   const constraints = [];
 
   if (node.maxWidth !== undefined && node.maxWidth !== null) {
@@ -74,7 +74,7 @@ export const htmlSizePartial = (
     constraints.push(formatWithJSX("min-height", isJsx, node.minHeight));
   }
 
-  // Return constraints separately instead of appending to width/height
+  // Returned separately so size() can append min/max without merging into width/height.
   return {
     width: w,
     height: h,

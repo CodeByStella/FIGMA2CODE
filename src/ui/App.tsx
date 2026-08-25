@@ -1,3 +1,8 @@
+/**
+ * Plugin UI root: listens for main-thread postMessage events, assembles ZIP
+ * downloads from streamed files, and forwards user actions (settings, export,
+ * tidy, OpenRouter key) back to plugin.ts.
+ */
 import { useEffect, useRef, useState } from "react";
 import { PluginUI } from "./PluginUI";
 import { coerceIncomingBytes, downloadZipFromFiles } from "./zip";
@@ -15,6 +20,7 @@ import {
   ZipFileMessage,
   ZipErrorMessage,
   FullCodeMessage,
+  OpenRouterKeyStatusMessage,
 } from "types";
 import { postUISettingsChangingMessage } from "./messaging";
 import copy from "copy-to-clipboard";
@@ -28,6 +34,7 @@ interface AppState {
   isLoading: boolean;
   isZipExporting: boolean;
   isTidying: boolean;
+  hasOpenRouterKey: boolean;
   settings: PluginSettings | null;
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
@@ -59,6 +66,7 @@ export default function App() {
     isLoading: false,
     isZipExporting: false,
     isTidying: false,
+    hasOpenRouterKey: false,
     settings: null,
     colors: [],
     gradients: [],
@@ -76,10 +84,6 @@ export default function App() {
     window.onmessage = (event: MessageEvent) => {
       const untypedMessage = event.data.pluginMessage as Message;
       if (!untypedMessage?.type) return;
-
-      if (untypedMessage.type !== "zipFile" && untypedMessage.type !== "code") {
-        console.log("[ui] message:", untypedMessage.type);
-      }
 
       switch (untypedMessage.type) {
         case "conversionStart":
@@ -161,8 +165,7 @@ export default function App() {
           }));
           try {
             downloadZipFromFiles(done.folder, files);
-          } catch (err) {
-            console.error("[ui] ZIP download failed", err);
+          } catch {
             setState((prevState) => ({
               ...prevState,
               statusMessage: "ZIP built but browser download failed",
@@ -260,6 +263,15 @@ export default function App() {
           copy(JSON.stringify(event.data.pluginMessage.data, null, 2));
           break;
 
+        case "openRouterKeyStatus": {
+          const status = untypedMessage as OpenRouterKeyStatusMessage;
+          setState((prevState) => ({
+            ...prevState,
+            hasOpenRouterKey: Boolean(status.hasKey),
+          }));
+          break;
+        }
+
         default:
           break;
       }
@@ -279,7 +291,6 @@ export default function App() {
     value: PluginSettings[keyof PluginSettings],
   ) => {
     if (state.settings && state.settings[key] === value) {
-      // do nothing
     } else {
       postUISettingsChangingMessage(key, value, { targetOrigin: "*" });
     }
@@ -291,7 +302,14 @@ export default function App() {
   };
 
   const handleTidyAndConvert = () => {
-    if (state.isLoading || state.isZipExporting || state.isTidying) return;
+    if (
+      state.isLoading ||
+      state.isZipExporting ||
+      state.isTidying ||
+      !state.hasOpenRouterKey
+    ) {
+      return;
+    }
     setState((prev) => ({
       ...prev,
       isTidying: true,
@@ -299,6 +317,13 @@ export default function App() {
       statusMessage: "Tidying layout…",
     }));
     parent.postMessage({ pluginMessage: { type: "tidyAndConvert" } }, "*");
+  };
+
+  const handleSaveOpenRouterKey = (key: string) => {
+    parent.postMessage(
+      { pluginMessage: { type: "setOpenRouterKey", key } },
+      "*",
+    );
   };
 
   const requestFullCode = (purpose: "copy" | "display") => {
@@ -318,6 +343,7 @@ export default function App() {
         isLoading={state.isLoading}
         isZipExporting={state.isZipExporting}
         isTidying={state.isTidying}
+        hasOpenRouterKey={state.hasOpenRouterKey}
         code={state.displayedCode}
         lineCount={state.lineCount}
         showingFullCode={state.showingFullCode}
@@ -330,6 +356,7 @@ export default function App() {
         progressPercent={state.progressPercent}
         onDownloadZip={handleDownloadZip}
         onTidyAndConvert={handleTidyAndConvert}
+        onSaveOpenRouterKey={handleSaveOpenRouterKey}
         onCopyFullCode={() => requestFullCode("copy")}
         onShowFullCode={() => requestFullCode("display")}
       />

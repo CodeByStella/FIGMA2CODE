@@ -21,6 +21,7 @@ import { addWarning } from "../warnings";
 import { getCachedAsset } from "../../export/cache";
 import { framedImageTransformCss } from "../../export/flags";
 
+// Walk enriched alt-nodes and emit HTML/CSS strings for preview or ZIP index.html.
 const selfClosingTags = ["img"];
 
 export let isPreviewGlobal = false;
@@ -42,7 +43,7 @@ export const htmlMain = async (
 
   let htmlContent = await htmlWidgetGenerator(sceneNode, settings);
 
-  // remove the initial \n that is made in Container.
+  // htmlContainer prefixes output with a newline for indentation.
   if (htmlContent.length > 0 && htmlContent.startsWith("\n")) {
     htmlContent = htmlContent.slice(1, htmlContent.length);
   }
@@ -73,7 +74,7 @@ const htmlWidgetGenerator = async (
   sceneNode: ReadonlyArray<SceneNode>,
   settings: HTMLSettings,
 ): Promise<string> => {
-  // filter non visible nodes. This is necessary at this step because conversion already happened.
+  // Visibility was already handled in toJson; this catches nodes hidden after enrichment.
   const promiseOfConvertedCode = getVisibleNodes(sceneNode).map(
     convertNode(settings),
   );
@@ -82,7 +83,7 @@ const htmlWidgetGenerator = async (
 };
 
 const convertNode = (settings: HTMLSettings) => async (node: SceneNode) => {
-  // Prefer SVG from ZIP asset cache (vectors, icon instances, gradient text)
+  // Prefer baked SVG from ZIP cache (gradient text, icon instances, effect-heavy vectors).
   const cachedSvg = node.id ? getCachedAsset(node.id) : undefined;
   if (
     settings.embedVectors &&
@@ -99,7 +100,7 @@ const convertNode = (settings: HTMLSettings) => async (node: SceneNode) => {
       node.type === "TEXT")
   ) {
     (node as any).canBeFlattened = true;
-    // ZIP static HTML: reference assets/*.svg instead of inlining
+    // Static ZIP: <img src="assets/..."> instead of inlined SVG markup.
     if (settings.relativeAssetPaths && cachedSvg.path) {
       return htmlWrapSVGFile(node, settings, cachedSvg.path);
     }
@@ -167,14 +168,10 @@ const htmlWrapSVG = (
     .addData("svg-wrapper")
     .position();
 
-  // The SVG content already has the var() references, so we don't need
-  // to add inline CSS variables in most cases. The browser will use the fallbacks
-  // if the variables aren't defined in the CSS.
-
   return `\n<div${builder.build()}>\n${indentString(node.svg ?? "")}</div>`;
 };
 
-/** Reference a baked SVG file from the ZIP assets folder (static index.html). */
+/** ZIP index.html: reference a pre-exported SVG under assets/ rather than inlining. */
 const htmlWrapSVGFile = (
   node: SceneNode,
   settings: HTMLSettings,
@@ -198,15 +195,12 @@ const htmlGroup = async (
   node: GroupNode,
   settings: HTMLSettings,
 ): Promise<string> => {
-  // ignore the view when size is zero or less
-  // while technically it shouldn't get less than 0, due to rounding errors,
-  // it can get to values like: -0.000004196293048153166
-  // also ignore if there are no children inside, which makes no sense
+  // Skip degenerate groups (rounding can yield negative dimensions).
   if (node.width < 0 || node.height <= 0 || node.children.length === 0) {
     return "";
   }
 
-  // this needs to be called after CustomNode because widthHeight depends on it
+  // commonPositionStyles must run before child layout (width/height depend on positioning mode).
   const builder = new HtmlDefaultBuilder(node, settings).commonPositionStyles();
 
   if (builder.styles) {
@@ -271,13 +265,10 @@ const htmlFrame = async (
     return await htmlContainer(node, childrenStr, rowColumn, settings);
   }
 
-  // node.layoutMode === "NONE" && node.children.length > 1
-  // children needs to be absolute
+  // layoutMode NONE with multiple children → absolute positioning inside container.
   return await htmlContainer(node, childrenStr, [], settings);
 };
 
-// properties named propSomething always take care of ","
-// sometimes a property might not exist, so it doesn't add ","
 const htmlContainer = async (
   node: SceneNode &
     SceneNodeMixin &
@@ -289,7 +280,6 @@ const htmlContainer = async (
   additionalStyles: string[] = [],
   settings: HTMLSettings,
 ): Promise<string> => {
-  // ignore the view when size is zero or less
   if (node.width <= 0 || node.height <= 0) {
     return children;
   }

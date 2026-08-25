@@ -9,11 +9,11 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
     super(node, settings);
   }
 
-  // Override htmlElement to ensure text nodes use paragraph elements
   get htmlElement(): string {
     return "p";
   }
 
+  // Per-segment styles from toJson styledTextSegments drive inline CSS on spans.
   getTextSegments(node: TextNode): {
     style: string;
     text: string;
@@ -28,7 +28,6 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
     }
 
     return segments.map((segment) => {
-      // Prepare additional CSS properties from layer blur and drop shadow effects.
       const additionalStyles: { [key: string]: string } = {};
 
       const layerBlurStyle = this.getLayerBlurStyle();
@@ -130,11 +129,6 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
     return null;
   }
 
-  /**
-   * https://tailwindcss.com/docs/font-style/
-   * example: font-extrabold
-   * example: italic
-   */
   getFontStyle(style: string): string {
     if (style.toLowerCase().match("italic")) {
       return "italic";
@@ -144,11 +138,8 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
 
   textAlignHorizontal(): this {
     const node = this.node as TextNode;
-    // if alignHorizontal is LEFT, don't do anything because that is native
 
-    // only undefined in testing
     if (node.textAlignHorizontal && node.textAlignHorizontal !== "LEFT") {
-      // todo when node.textAutoResize === "WIDTH_AND_HEIGHT" and there is no \n in the text, this can be ignored.
       let textAlign = "";
       switch (node.textAlignHorizontal) {
         case "CENTER":
@@ -189,9 +180,7 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
     return this;
   }
 
-  /**
-   * Returns a CSS filter value for layer blur.
-   */
+  /** Layer blur on text → CSS filter (effects not baked into text SVG). */
   private getLayerBlurStyle(): string {
     if (this.node && (this.node as TextNode).effects) {
       const effects = (this.node as TextNode).effects;
@@ -208,9 +197,7 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
     return "";
   }
 
-  /**
-   * Returns a CSS text-shadow value if a drop shadow effect is applied.
-   */
+  /** Drop shadow on text → CSS text-shadow. */
   private getTextShadowStyle(): string {
     if (this.node && (this.node as TextNode).effects) {
       const effects = (this.node as TextNode).effects;
@@ -218,7 +205,7 @@ export class HtmlTextBuilder extends HtmlDefaultBuilder {
         (effect) => effect.type === "DROP_SHADOW" && effect.visible !== false,
       );
       if (dropShadow) {
-        const ds = dropShadow as DropShadowEffect; // Type narrow the effect.
+        const ds = dropShadow as DropShadowEffect;
         const offsetX = Math.round(ds.offset.x);
         const offsetY = Math.round(ds.offset.y);
         const blurRadius = Math.round(ds.radius);

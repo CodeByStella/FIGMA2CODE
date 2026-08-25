@@ -1,4 +1,4 @@
-// from https://dev.to/alvaromontoro/building-your-own-color-contrast-checker-4j7o
+// WCAG contrast ratio for the UI color swatch (black/white legibility hints).
 export const calculateContrastRatio = (color1: RGB, color2: RGB): number => {
   const color1luminance = luminance(color1);
   const color2luminance = luminance(color2);

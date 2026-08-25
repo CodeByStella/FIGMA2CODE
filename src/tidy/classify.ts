@@ -1,3 +1,5 @@
+/** Classifies frame children into layout roles before Auto Layout inference. */
+
 import {
   ALIGN_EPS,
   BG_COVER_RATIO,
@@ -77,8 +79,8 @@ export function parentHasFills(node: SceneNode): boolean {
 }
 
 /**
- * Classify visible children into background / overlay / flow / absolute (rotated).
- * `index` order is paint order (lower = behind).
+ * Split visible children into flow vs absolute buckets. Paint order (`index`) matters
+ * for background detection; rotated nodes are always absolute because AL cannot represent them.
  */
 export function classifyChildren(
   items: ChildGeom[],
@@ -98,20 +100,19 @@ export function classifyChildren(
     candidates.push(item);
   }
 
-  // Background: near-full cover, prefer lowest index among covers
+  // Full-bleed layer behind content — lowest paint index wins among covers.
   const covers = candidates
     .filter((c) => coversParent(c.rect, parentRect, BG_COVER_RATIO))
     .sort((a, b) => a.index - b.index);
 
   let bg: ChildGeom | null = covers[0] ?? null;
-  // Prefer plain fill shapes as foldable bg
+  // Plain fill shapes can be folded into the parent frame; complex backgrounds stay absolute.
   const plainCover = covers.find((c) => isPlainFillShape(c.node));
   if (plainCover) bg = plainCover;
 
   const rest = candidates.filter((c) => c !== bg);
   if (bg) backgrounds.push(bg);
 
-  // Pairwise overlaps → smaller on top is overlay (unless both large decorative)
   const flowSet = new Set(rest);
   const overlapPairs: Array<[ChildGeom, ChildGeom]> = [];
 
@@ -126,7 +127,7 @@ export function classifyChildren(
     }
   }
 
-  // Decorative: ≥3 siblings with pairwise overlaps and no clear size hierarchy
+  // Overlapping siblings that are all decorative (badges, icons) cannot share one Auto Layout flow.
   if (overlapPairs.length >= 3 && rest.length >= 3) {
     const heavilyOverlapped = new Set<ChildGeom>();
     for (const [a, b] of overlapPairs) {
@@ -147,7 +148,7 @@ export function classifyChildren(
     if (!flowSet.has(a) || !flowSet.has(b)) continue;
     const smaller = rectArea(a.rect) <= rectArea(b.rect) ? a : b;
     const larger = smaller === a ? b : a;
-    // Badge / icon on card: small overlaps larger and center inside larger
+    // Badge/icon on a card: small layer centered inside a larger sibling stays absolute overlay.
     if (
       rectArea(smaller.rect) < rectArea(larger.rect) * 0.4 &&
       containsPoint(
@@ -160,7 +161,7 @@ export function classifyChildren(
       flowSet.delete(smaller);
       continue;
     }
-    // Significant overlap without clear containment → both absolute
+    // Heavy mutual overlap without containment — neither sibling belongs in Auto Layout flow.
     if (overlapRatioOfMin(a.rect, b.rect) >= 0.5) {
       if (flowSet.has(a)) {
         absolute.push(a);
@@ -173,7 +174,7 @@ export function classifyChildren(
     }
   }
 
-  // Small floating near edge overlapping others → overlay
+  // Small edge-adjacent floaters that overlap content are overlays, not flow items.
   for (const item of [...flowSet]) {
     const area = rectArea(item.rect);
     const parentArea = rectArea(parentRect);
@@ -201,7 +202,7 @@ export function classifyChildren(
     }
   }
 
-  // Overflow outside parent → absolute
+  // Layers extending well outside the parent bounds break Auto Layout — keep absolute.
   for (const item of [...flowSet]) {
     if (
       item.rect.x < -ALIGN_EPS ||
@@ -209,7 +210,7 @@ export function classifyChildren(
       item.rect.x + item.rect.width > parentRect.width + ALIGN_EPS ||
       item.rect.y + item.rect.height > parentRect.height + ALIGN_EPS
     ) {
-      // Only if substantially outside
+      // Require substantial overflow — minor sub-pixel bleed is tolerated.
       const outside =
         item.rect.x < -ALIGN_EPS * 2 ||
         item.rect.y < -ALIGN_EPS * 2 ||

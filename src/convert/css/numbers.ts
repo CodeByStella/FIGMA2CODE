@@ -1,6 +1,6 @@
 import { indentStringFlutter } from "./indent";
 
-// this is necessary to avoid a height of 4.999999523162842.
+// Round sub-pixel Figma dimensions before emitting CSS px values.
 export const numberToFixedString = (num: number): string => {
   return num.toFixed(2).replace(/\.00$/, "");
 };
@@ -81,7 +81,7 @@ export const generateWidgetCode = (
 };
 
 function escapeRegExp(string: string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export const replaceAllUtil = (str: string, find: string, replace: string) =>

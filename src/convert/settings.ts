@@ -1,6 +1,6 @@
 import { PluginSettings } from "types";
 
-/** Fixed HTML+CSS export settings. Preview and ZIP share this. */
+// Preview and ZIP share the same HTML/CSS export flags (embed assets, variables, layer names).
 export const lockedHtmlSettings = (
   settings: PluginSettings,
 ): PluginSettings => ({

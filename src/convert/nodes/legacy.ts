@@ -7,6 +7,7 @@ import {
 } from "./svg";
 import { curry } from "../../shared/curry";
 
+// Pre-2025 conversion path: clones plugin nodes in-process instead of JSON_REST_V1 + enrich.
 export const isTypeOrGroupOfTypes = curry(
   (matchTypes: NodeType[], node: SceneNode): boolean => {
     if (node.visible === false || matchTypes.includes(node.type)) return true;
@@ -16,14 +17,11 @@ export const isTypeOrGroupOfTypes = curry(
         const childNode = node.children[i];
         const result = isTypeOrGroupOfTypes(matchTypes, childNode);
         if (result) continue;
-        // child is false
         return false;
       }
-      // all children are true
       return true;
     }
 
-    // not group or vector
     return false;
   },
 );
@@ -31,7 +29,7 @@ export const isTypeOrGroupOfTypes = curry(
 export let globalTextStyleSegments: Record<string, StyledTextSegmentSubset[]> =
   {};
 
-// List of types that can be flattened into SVG
+// Legacy flatten check: entire subtree must be vector primitives (icons.ts is used in the modern path).
 const canBeFlattened = isTypeOrGroupOfTypes([
   "VECTOR",
   "STAR",
@@ -51,7 +49,6 @@ export const convertNodeToAltNode =
 
     const type = node.type;
     switch (type) {
-      // Standard nodes
       case "RECTANGLE":
       case "ELLIPSE":
       case "LINE":
@@ -61,33 +58,26 @@ export const convertNodeToAltNode =
       case "BOOLEAN_OPERATION":
         return cloneNode(node, parent);
 
-      // Group nodes
       case "FRAME":
       case "INSTANCE":
       case "COMPONENT":
       case "COMPONENT_SET":
-        // if the frame, instance etc. has no children, convert the frame to rectangle
         if (node.children.length === 0)
           return cloneAsRectangleNode(node, parent);
-      // goto SECTION
 
       case "GROUP":
-        // if a Group is visible and has only one child, the Group should be ungrouped.
         if (type === "GROUP" && node.children.length === 1 && node.visible)
           return convertNodeToAltNode(parent)(node.children[0]);
-      // goto SECTION
 
       case "SECTION":
         const group = cloneNode(node, parent);
         const groupChildren = oldConvertNodesToAltNodes(node.children, group);
         return assignChildren(groupChildren, group);
 
-      // Text Nodes
       case "TEXT":
         globalTextStyleSegments[node.id] = extractStyledTextSegments(node);
         return cloneNode(node, parent);
 
-      // Unsupported Nodes
       case "SLICE":
         throw new Error(
           `Sorry, Slices are not supported. Type:${node.type} id:${node.id}`,
@@ -109,9 +99,8 @@ export const cloneNode = <T extends BaseNode>(
   node: T,
   parent: ParentNode | null,
 ): T => {
-  // Create the cloned object with the correct prototype
   const cloned = {} as T;
-  // Create a new object with only the desired descriptors (excluding 'parent' and 'children')
+  // Shallow copy; parent/children are wired separately to preserve tree shape.
   for (const prop in node) {
     if (
       prop !== "parent" &&
@@ -133,11 +122,7 @@ export const cloneNode = <T extends BaseNode>(
     }
   }
 
-  // Set parent explicitly in addition to using assignParent
   assignParent(parent, cloned);
-  //   if (parent) {
-  //     (cloned as any).parent = parent;
-  //   }
 
   const altNode = {
     ...cloned,
@@ -153,7 +138,7 @@ export const cloneNode = <T extends BaseNode>(
   return altNode;
 };
 
-// auto convert Frame to Rectangle when Frame has no Children
+// Empty frame → rectangle so shape CSS applies without a wrapper div.
 const cloneAsRectangleNode = <T extends BaseNode>(
   node: T,
   parent: ParentNode | null,

@@ -1,3 +1,5 @@
+/** Color tokens extracted from the selection for the UI palette and CSS export. */
+
 export type FontWeightNumber =
   | "100"
   | "200"

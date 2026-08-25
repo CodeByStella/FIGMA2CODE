@@ -1,3 +1,7 @@
+/**
+ * Typed postMessage helpers from the plugin main thread to the UI iframe.
+ * Safe when no UI is shown (codegen-only mode).
+ */
 import {
   ConversionMessage,
   ConversionStartMessage,
@@ -10,9 +14,8 @@ import {
 const safePostMessage = (message: unknown) => {
   try {
     figma.ui.postMessage(message);
-  } catch (error) {
-    // Avoid crashing in codegen/no-UI environments.
-    console.warn("[backend] postMessage failed (no UI?)");
+  } catch {
+    /* No UI surface — codegen and headless runs must not throw here */
   }
 };
 

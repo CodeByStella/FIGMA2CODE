@@ -1,4 +1,4 @@
-/** Pixel-perfect snapshot / validate / restore for tidy apply. */
+/** Absolute bounding-box snapshots used to validate and rollback tidy apply. */
 
 export const PIXEL_EPS = 0.5;
 export const TIDY_WRAPPER_KEY = "tidyWrapper";
@@ -44,7 +44,7 @@ export function nearlySameAbs(
   );
 }
 
-/** Returns ids whose absolute box drifted from the snapshot. */
+/** Layer ids whose absolute box moved beyond tolerance since the pre-apply snapshot. */
 export function driftedIds(
   root: SceneNode,
   before: Map<string, AbsSnap>,
@@ -88,8 +88,8 @@ function depthOf(node: BaseNode): number {
 }
 
 /**
- * Place a node so its absoluteBoundingBox matches `target`, relative to
- * its current parent's absolute origin.
+ * Position a node so its absoluteBoundingBox matches the snapshot, compensating
+ * for the parent's absolute origin.
  */
 function restoreNodeAbs(node: SceneNode, target: AbsSnap): void {
   if (!("x" in node)) return;
@@ -105,7 +105,7 @@ function restoreNodeAbs(node: SceneNode, target: AbsSnap): void {
       (node as FrameNode).layoutPositioning = "AUTO";
     }
   } catch {
-    // ignore
+    // layoutPositioning is not writable on every node type.
   }
   (node as LayoutMixin).x = target.x - originX;
   (node as LayoutMixin).y = target.y - originY;
@@ -116,14 +116,14 @@ function restoreNodeAbs(node: SceneNode, target: AbsSnap): void {
         Math.max(1, target.h),
       );
     } catch {
-      // some nodes cannot resize
+      // Some nodes cannot be resized programmatically.
     }
   }
 }
 
 /**
- * Undo Auto Layout + tidy wrappers under `frame`, restoring every snapshotted
- * descendant to its pre-tidy absolute box. Parent stays freeform.
+ * Revert a frame subtree to pre-tidy absolute positions: disable Auto Layout,
+ * unwrap tidy wrapper frames, and restore every snapshotted descendant.
  */
 export function restoreFramePixelPerfect(
   frame: FrameNode,
@@ -133,12 +133,12 @@ export function restoreFramePixelPerfect(
   if (wasLocked) frame.locked = false;
 
   try {
-    // Turn off Auto Layout first so we can freely position.
+    // Auto Layout must be off before absolute repositioning is allowed.
     if ("layoutMode" in frame && frame.layoutMode !== "NONE") {
       frame.layoutMode = "NONE";
     }
 
-    // Unwrap tidy wrappers deepest-first (children promoted to wrapper parent).
+    // Unwrap inference wrappers deepest-first so children land in the correct parent.
     const wrappers = frame.findAll(isTidyWrapper) as FrameNode[];
     wrappers.sort((a, b) => depthOf(b) - depthOf(a));
 
@@ -158,21 +158,21 @@ export function restoreFramePixelPerfect(
       try {
         if (wrapper.parent) wrapper.remove();
       } catch {
-        // already gone
+        // Wrapper may already have been removed during promotion.
       }
     }
 
-    // Restore frame size from snapshot if present
+    // Restore frame outer size from snapshot when available.
     const frameSnap = before.get(frame.id);
     if (frameSnap && "resize" in frame) {
       try {
         frame.resize(Math.max(1, frameSnap.w), Math.max(1, frameSnap.h));
       } catch {
-        // ignore
+        // Frame resize may fail on locked or component-backed nodes.
       }
     }
 
-    // Restore every remaining descendant that we snapshotted
+    // Walk remaining descendants — every snapshotted node returns to its absolute box.
     const restoreVisit = (node: SceneNode) => {
       const snap = before.get(node.id);
       if (snap && node.id !== frame.id) {

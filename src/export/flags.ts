@@ -1,6 +1,10 @@
+/**
+ * Propagate ZIP asset metadata onto the converted node tree so HTML generation
+ * matches exported files (effects baked, framed images, asset-only SVGs).
+ */
 import { getCachedAsset } from "./cache";
 
-/** Attach ZIP-export accuracy flags onto converted AltNodes (mutates tree). */
+/** Walk converted nodes and copy cached export flags onto each match (mutates tree). */
 export function applyAssetFlagsToTree(nodes: readonly any[]): void {
   const walk = (n: any) => {
     if (!n || typeof n !== "object") return;
@@ -23,11 +27,10 @@ export function applyAssetFlagsToTree(nodes: readonly any[]): void {
   for (const n of nodes) walk(n);
 }
 
-/** CSS transform bits for framed IMAGE assets (rotation cleared at export). */
+/** CSS transform for PNG image fills; export clears rotation on the Figma node first. */
 export function framedImageTransformCss(node: any): string {
   const parts: string[] = [];
   const rot = typeof node.rotation === "number" ? node.rotation : 0;
-  // AltNode rotation is typically degrees already after nodesToJSON
   if (Math.abs(rot) > 0.05) parts.push(`rotate(${rot}deg)`);
   const sx = node.flipHorizontal ? -1 : 1;
   const sy = node.flipVertical ? -1 : 1;

@@ -6,7 +6,7 @@ export const getCommonPositionValue = (
 ): { x: number; y: number } => {
   if (node.parent && node.parent.absoluteBoundingBox) {
     if (settings?.embedVectors && node.svg) {
-      // When embedding vectors, we need to use the absolute position, since it already includes the rotation.
+      // Inlined SVG is positioned from absoluteBoundingBox, not transformed x/y.
       return {
         x: node.absoluteBoundingBox.x - node.parent.absoluteBoundingBox.x,
         y: node.absoluteBoundingBox.y - node.parent.absoluteBoundingBox.y,
@@ -30,25 +30,29 @@ export const getCommonPositionValue = (
 };
 
 interface BoundingBox {
-  width: number; // w_b
-  height: number; // h_b
-  x: number; // x_b
-  y: number; // y_b
+  width: number;
+  height: number;
+  x: number;
+  y: number;
 }
 
 interface RectangleStyle {
-  width: number; // Original width (w)
-  height: number; // Original height (h)
-  left: number; // Final CSS left
-  top: number; // Final CSS top
-  rotation: number; // Rotation in degrees
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+  rotation: number;
 }
 
+/**
+ * Derive pre-rotation width/height and CSS position from JSON_REST_V1 bounding box.
+ * Used in nodes/toJson when REST export omits explicit dimensions.
+ */
 export function calculateRectangleFromBoundingBox(
   boundingBox: BoundingBox,
   figmaRotationDegrees: number,
 ): RectangleStyle {
-  const cssRotationDegrees = -figmaRotationDegrees; // Direct CSS mapping
+  const cssRotationDegrees = -figmaRotationDegrees;
   const theta = (cssRotationDegrees * Math.PI) / 180;
   const cosTheta = Math.cos(theta);
   const sinTheta = Math.sin(theta);
@@ -57,12 +61,10 @@ export function calculateRectangleFromBoundingBox(
 
   const { width: w_b, height: h_b, x: x_b, y: y_b } = boundingBox;
 
-  // For top-left origin, bounding box depends on rotation direction
   const denominator = absCosTheta * absCosTheta - absSinTheta * absSinTheta;
   const h = (w_b * absSinTheta - h_b * absCosTheta) / -denominator;
   const w = (w_b - h * absSinTheta) / absCosTheta;
 
-  // Rotate corners to find bounding box offsets
   const corners = [
     { x: 0, y: 0 },
     { x: w, y: 0 },

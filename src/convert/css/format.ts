@@ -6,7 +6,6 @@ export const formatWithJSX = (
   isJsx: boolean,
   value: number | string,
 ): string => {
-  // convert font-size to fontSize.
   const jsx_property = property
     .split("-")
     .map((d, i) => (i > 0 ? d.charAt(0).toUpperCase() + d.slice(1) : d))
@@ -43,10 +42,7 @@ export const formatMultipleJSX = (
     .join(isJsx ? ", " : "; ");
 
 export const escapeJSXText = (text: string): string => {
-  return (
-    encode(text, { level: "html5" })
-      // process JSX curly braces
-      .replace(/\{/g, "&#123;")
-      .replace(/\}/g, "&#125;")
-  );
+  return encode(text, { level: "html5" })
+    .replace(/\{/g, "&#123;")
+    .replace(/\}/g, "&#125;");
 };

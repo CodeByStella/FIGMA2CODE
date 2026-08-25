@@ -2,9 +2,7 @@ import { numberToFixedString } from "../css/numbers";
 import { retrieveTopFill } from "../color/fill";
 import { GradientPaint, Paint } from "../../types/figma-rest";
 
-/**
- * Helper to process a color with variable binding if present
- */
+/** Emit var(--token, fallback) when toJson attached variableColorName to the paint. */
 export const processColorWithVariable = (fill: {
   color: RGB;
   opacity?: number;
@@ -20,9 +18,7 @@ export const processColorWithVariable = (fill: {
   return htmlColor(fill.color, opacity);
 };
 
-/**
- * Extract color, opacity, and bound variable from a fill
- */
+/** Normalize SOLID or first gradient stop into color + optional variable name. */
 const getColorAndVariable = (
   fill: Paint,
 ): {
@@ -53,9 +49,7 @@ const getColorAndVariable = (
   return { color: { r: 0, g: 0, b: 0 }, opacity: 0 };
 };
 
-/**
- * Convert fills to an HTML color string
- */
+/** Top visible fill → CSS color (respects Figma paint stack order). */
 export const htmlColorFromFills = (
   fills: ReadonlyArray<Paint> | undefined,
 ): string => {
@@ -67,16 +61,11 @@ export const htmlColorFromFills = (
   return "";
 };
 
-/**
- * Convert fills to an HTML color string
- */
 export const htmlColorFromFill = (fill: Paint): string => {
   return processColorWithVariable(fill as any);
 };
 
-/**
- * Convert RGB color to CSS color string
- */
+/** RGB → CSS named/hex/rgba; matches svg.ts color normalization for variable lookup. */
 export const htmlColor = (color: RGB, alpha: number = 1): string => {
   if (color.r === 1 && color.g === 1 && color.b === 1 && alpha === 1) {
     return "white";
@@ -98,9 +87,6 @@ export const htmlColor = (color: RGB, alpha: number = 1): string => {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 };
 
-/**
- * Process a single gradient stop
- */
 const processGradientStop = (
   stop: ColorStop,
   fillOpacity: number = 1,
@@ -119,9 +105,6 @@ const processGradientStop = (
   return `${color} ${position}`;
 };
 
-/**
- * Process all gradient stops for a gradient
- */
 const processGradientStops = (
   stops: ReadonlyArray<ColorStop>,
   fillOpacity: number = 1,
@@ -135,9 +118,7 @@ const processGradientStops = (
     .join(", ");
 };
 
-/**
- * Determine the appropriate gradient function based on fill type
- */
+/** Dispatch Figma gradient type to the matching CSS gradient function. */
 export const htmlGradientFromFills = (fill: Paint): string => {
   if (!fill) return "";
   switch (fill.type) {
@@ -154,16 +135,14 @@ export const htmlGradientFromFills = (fill: Paint): string => {
   }
 };
 
-/**
- * Generate CSS linear gradient
- */
+/** Figma handle positions → CSS linear-gradient angle (origin differs from CSS). */
 export const htmlLinearGradient = (fill: GradientPaint) => {
   const [start, end] = fill.gradientHandlePositions;
   const dx = end.x - start.x;
   const dy = end.y - start.y;
-  let angle = Math.atan2(dy, dx) * (180 / Math.PI); // Angle in degrees
-  angle = (angle + 360) % 360; // Normalize to 0-360
-  const cssAngle = (angle + 90) % 360; // Adjust for CSS convention
+  let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  angle = (angle + 360) % 360;
+  const cssAngle = (angle + 90) % 360;
   const mappedFill = processGradientStops(
     fill.gradientStops,
     fill.opacity ?? 1,
@@ -171,16 +150,12 @@ export const htmlLinearGradient = (fill: GradientPaint) => {
   return `linear-gradient(${cssAngle.toFixed(0)}deg, ${mappedFill})`;
 };
 
-/**
- * Generate CSS radial gradient
- */
+/** Map Figma radial handles to CSS ellipse size and center. */
 export const htmlRadialGradient = (fill: GradientPaint) => {
   const [center, h1, h2] = fill.gradientHandlePositions;
-  const cx = center.x * 100; // Center X as percentage
-  const cy = center.y * 100; // Center Y as percentage
-  // Calculate horizontal radius (distance from center to h1)
+  const cx = center.x * 100;
+  const cy = center.y * 100;
   const rx = Math.sqrt((h1.x - center.x) ** 2 + (h1.y - center.y) ** 2) * 100;
-  // Calculate vertical radius (distance from center to h2)
   const ry = Math.sqrt((h2.x - center.x) ** 2 + (h2.y - center.y) ** 2) * 100;
   const mappedStops = processGradientStops(
     fill.gradientStops,
@@ -189,18 +164,15 @@ export const htmlRadialGradient = (fill: GradientPaint) => {
   return `radial-gradient(ellipse ${rx.toFixed(2)}% ${ry.toFixed(2)}% at ${cx.toFixed(2)}% ${cy.toFixed(2)}%, ${mappedStops})`;
 };
 
-/**
- * Generate CSS conic (angular) gradient
- */
+/** Figma angular gradient → CSS conic-gradient. */
 export const htmlAngularGradient = (fill: GradientPaint) => {
   const [center, _, startDirection] = fill.gradientHandlePositions;
-  const cx = center.x * 100; // Center X as percentage
-  const cy = center.y * 100; // Center Y as percentage
-  // Calculate the starting angle
+  const cx = center.x * 100;
+  const cy = center.y * 100;
   const dx = startDirection.x - center.x;
   const dy = startDirection.y - center.y;
-  let angle = Math.atan2(dy, dx) * (180 / Math.PI); // Convert to degrees
-  angle = (angle + 360) % 360; // Normalize to 0-360 degrees
+  let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  angle = (angle + 360) % 360;
   const mappedFill = processGradientStops(
     fill.gradientStops,
     fill.opacity ?? 1,
@@ -210,9 +182,7 @@ export const htmlAngularGradient = (fill: GradientPaint) => {
   return `conic-gradient(from ${angle.toFixed(0)}deg at ${cx.toFixed(2)}% ${cy.toFixed(2)}%, ${mappedFill})`;
 };
 
-/**
- * Generate CSS diamond gradient (approximation using four linear gradients)
- */
+/** Figma has no diamond gradient; approximate with four corner linear gradients. */
 export const htmlDiamondGradient = (fill: GradientPaint) => {
   const stops = processGradientStops(
     fill.gradientStops,
@@ -235,7 +205,8 @@ export const htmlDiamondGradient = (fill: GradientPaint) => {
 };
 
 /**
- * Build CSS background value from an array of paints
+ * Stack multiple fills into one background value.
+ * Reverses paint order so the topmost Figma fill maps to the front CSS layer.
  */
 export const buildBackgroundValues = (
   paintArray: ReadonlyArray<Paint> | PluginAPI["mixed"],
@@ -244,7 +215,6 @@ export const buildBackgroundValues = (
     return "";
   }
 
-  // If only one fill, use plain color or gradient
   if (paintArray.length === 1) {
     const paint = paintArray[0];
     if (paint.type === "SOLID") {
@@ -260,10 +230,9 @@ export const buildBackgroundValues = (
     return "";
   }
 
-  // For multiple fills, reverse to match CSS layering (first is top-most)
   const styles = [...paintArray].reverse().map((paint, index) => {
     if (paint.type === "SOLID") {
-      // Convert solid colors to gradients for proper layering
+      // Solid under another fill must be a gradient layer to stack in CSS.
       const color = htmlColorFromFills([paint]);
       if (index === 0) {
         return `linear-gradient(0deg, ${color} 0%, ${color} 100%)`;
@@ -277,7 +246,7 @@ export const buildBackgroundValues = (
     ) {
       return htmlGradientFromFills(paint);
     }
-    return ""; // Handle other paint types safely
+    return "";
   });
 
   return styles.filter((value) => value !== "").join(", ");

@@ -1,6 +1,6 @@
 /**
- * UTF-8 encode/decode for the Figma plugin sandbox, which has no
- * TextEncoder / TextDecoder.
+ * UTF-8 encode/decode for the Figma plugin sandbox, which lacks TextEncoder
+ * and TextDecoder (main thread and UI iframe both use this).
  */
 
 export function utf8Encode(str: string): Uint8Array {
@@ -18,7 +18,6 @@ export function utf8Encode(str: string): Uint8Array {
         0x80 | (code & 0x3f),
       );
     } else {
-      // Surrogate pair → code point
       i += 1;
       code = 0x10000 + (((code & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
       bytes.push(

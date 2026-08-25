@@ -1,3 +1,7 @@
+/**
+ * Builds standalone index.html for ZIP downloads using relative assets/* paths
+ * instead of inline data URLs used in the live preview.
+ */
 import { PluginSettings } from "types";
 import { lockedHtmlSettings } from "../convert/settings";
 import { htmlMain } from "../convert/html/generate";
@@ -10,15 +14,12 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Preview already emits assets/* paths; leftover data URLs are not stored. */
+/** Preview HTML already references assets/*; no data-URL rewrite needed today. */
 export function rewriteDataUrlsToRelativePaths(html: string): string {
   return html;
 }
 
-/**
- * Build a standalone index.html that references assets/* via relative paths.
- * Open the extracted ZIP folder's index.html in a browser to preview the design.
- */
+/** Emit index.html + embedded CSS for the extracted ZIP folder. */
 export async function buildZipIndexHtml(
   nodes: SceneNode[],
   settings: PluginSettings,

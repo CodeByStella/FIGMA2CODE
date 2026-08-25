@@ -1,3 +1,4 @@
+/** Clipboard button; can copy inline text or delegate to main thread for full HTML. */
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -41,9 +42,7 @@ export function CopyButton({
         copy(value);
       }
       setIsCopied(true);
-    } catch (error) {
-      console.error("Failed to copy text: ", error);
-    }
+    } catch {}
   }, [onCopy, value]);
 
   return (

@@ -1,3 +1,4 @@
+// Builds the color/gradient swatch lists shown in the UI from the current selection.
 import { rgbTo6hex } from "./color/rgb";
 import { htmlColorFromFill, htmlGradientFromFills } from "./html/color";
 import { calculateContrastRatio } from "./contrast";
@@ -77,8 +78,8 @@ export const retrieveGenericLinearGradients = async (): Promise<
                   .replace(/\s+/g, "-")
                   .toLowerCase();
               }
-            } catch (e) {
-              console.error("Error retrieving variable for gradient stop:", e);
+            } catch {
+              // Variable may have been deleted since the file was last saved.
             }
           }
         }

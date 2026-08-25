@@ -1,11 +1,19 @@
+/**
+ * Figma plugin main thread: loads settings from clientStorage, converts the
+ * current selection to HTML/CSS, streams ZIP exports to the UI, and runs
+ * Tidy + Convert. Communicates with the iframe via postMessage; codegen mode
+ * registers a separate handler when figma.mode is "codegen".
+ */
 import { run, exportZipPackage, getLastPreviewHtml } from "./convert/run";
 import { htmlMain, htmlCodeGenTextStyles } from "./convert/html/generate";
 import { nodesToJSON } from "./convert/nodes/toJson";
-import { postSettingsChanged } from "./messaging";
+import { postBackendMessage, postSettingsChanged } from "./messaging";
 import { isTidying, tidySelection } from "./tidy";
+import { hasOpenRouterApiKey, setOpenRouterApiKey } from "./tidy/ai/key";
 import {
   PluginSettings,
   RequestFullCodeMessage,
+  SetOpenRouterKeyMessage,
   SettingWillChangeMessage,
 } from "types";
 
@@ -25,13 +33,8 @@ function isKeyOfPluginSettings(key: string): key is keyof PluginSettings {
 }
 
 const getUserSettings = async () => {
-  console.log("[DEBUG] getUserSettings - Starting to fetch user settings");
   const possiblePluginSrcSettings =
     (await figma.clientStorage.getAsync("userPluginSettings")) ?? {};
-  console.log(
-    "[DEBUG] getUserSettings - Raw settings from storage:",
-    possiblePluginSrcSettings,
-  );
 
   const updatedPluginSrcSettings = {
     ...defaultPluginSettings,
@@ -55,19 +58,18 @@ const getUserSettings = async () => {
     embedImages: true,
     embedVectors: true,
   };
-  console.log("[DEBUG] getUserSettings - Final settings:", userPluginSettings);
   return userPluginSettings;
 };
 
 const initSettings = async () => {
-  console.log("[DEBUG] initSettings - Initializing plugin settings");
   await getUserSettings();
   postSettingsChanged(userPluginSettings);
-  console.log("[DEBUG] initSettings - Calling safeRun with settings");
+  const hasKey = await hasOpenRouterApiKey();
+  postBackendMessage({ type: "openRouterKeyStatus", hasKey });
   safeRun(userPluginSettings);
 };
 
-// Used to prevent overlapping preview / ZIP work (also blocks selectionchange loops).
+/** One conversion, ZIP, or tidy job at a time; queues reruns from selectionchange. */
 let isBusy = false;
 let pendingRun = false;
 
@@ -79,25 +81,16 @@ const finishBusy = () => {
 };
 
 const safeRun = async (settings: PluginSettings) => {
-  console.log(
-    "[DEBUG] safeRun - Called with isBusy =",
-    isBusy,
-    "selectionCount =",
-    figma.currentPage.selection.length,
-  );
   if (isBusy || isTidying()) {
     pendingRun = true;
-    console.log("[DEBUG] safeRun - Busy; will rerun after current job");
     return;
   }
   let timedOut = false;
   try {
     isBusy = true;
-    console.log("[DEBUG] safeRun - Starting run execution");
     const watchdog = setTimeout(() => {
       if (!isBusy || timedOut) return;
       timedOut = true;
-      console.error("[DEBUG] safeRun - watchdog: conversion still running");
       figma.ui.postMessage({
         type: "error",
         error:
@@ -111,16 +104,12 @@ const safeRun = async (settings: PluginSettings) => {
       clearTimeout(watchdog);
     }
     if (timedOut) return;
-    console.log("[DEBUG] safeRun - Run execution completed");
   } catch (e) {
-    console.log("[DEBUG] safeRun - Error caught in execution");
     if (e && typeof e === "object" && "message" in e) {
       const error = e as Error;
-      console.log("error: ", error.stack);
       figma.ui.postMessage({ type: "error", error: error.message });
     } else {
       const errorMessage = String(e);
-      console.log("Unknown error: ", errorMessage);
       figma.ui.postMessage({
         type: "error",
         error: errorMessage || "Unknown error occurred",
@@ -150,7 +139,6 @@ const safeExportZip = async (settings: PluginSettings) => {
       e && typeof e === "object" && "message" in e
         ? String((e as Error).message)
         : String(e || "ZIP export failed");
-    console.error("[safeExportZip]", e);
     figma.ui.postMessage({ type: "zipError", error: errorMessage });
   } finally {
     setTimeout(finishBusy, 100);
@@ -171,7 +159,7 @@ const safeTidyAndConvert = async (settings: PluginSettings) => {
     if (!root) {
       return;
     }
-    // Avoid a second convert from selection/document listeners fired by the clone.
+    /** Tidy clones the selection; do not auto-convert again when that fires listeners. */
     pendingRun = false;
     await run(settings);
   } catch (e) {
@@ -179,7 +167,6 @@ const safeTidyAndConvert = async (settings: PluginSettings) => {
       e && typeof e === "object" && "message" in e
         ? String((e as Error).message)
         : String(e || "Tidy + Convert failed");
-    console.error("[safeTidyAndConvert]", e);
     figma.ui.postMessage({ type: "error", error: errorMessage });
     figma.ui.postMessage({ type: "conversion-complete", success: false });
   } finally {
@@ -198,6 +185,7 @@ const exportSelectionJson = async (nodes: readonly SceneNode[]) => {
     newConversion?: any;
   } = {};
 
+  /** Best-effort REST + internal JSON for the About debug helper; partial results are OK. */
   try {
     result.json = (await Promise.all(
       nodes.map(
@@ -209,8 +197,8 @@ const exportSelectionJson = async (nodes: readonly SceneNode[]) => {
           ).document,
       ),
     )) as SceneNode[];
-  } catch (error) {
-    console.error("Error exporting JSON:", error);
+  } catch {
+    /* REST export unavailable for some nodes */
   }
 
   try {
@@ -225,8 +213,8 @@ const exportSelectionJson = async (nodes: readonly SceneNode[]) => {
     };
     newNodes.forEach(removeParent);
     result.newConversion = newNodes;
-  } catch (error) {
-    console.error("Error in new conversion:", error);
+  } catch {
+    /* Internal conversion failed; UI still receives REST JSON when present */
   }
 
   return result;
@@ -261,7 +249,6 @@ const postFullCode = (purpose: "copy" | "display") => {
 };
 
 const standardMode = async () => {
-  console.log("[DEBUG] standardMode - Starting standard mode initialization");
   let initialized = false;
   const initializeOnce = async () => {
     if (initialized) {
@@ -283,17 +270,16 @@ const standardMode = async () => {
       await safeExportZip(userPluginSettings);
     } else if (msg.type === "tidyAndConvert") {
       await safeTidyAndConvert(userPluginSettings);
+    } else if (msg.type === "setOpenRouterKey") {
+      const { key } = msg as SetOpenRouterKeyMessage;
+      await setOpenRouterApiKey(typeof key === "string" ? key : "");
+      const hasKey = await hasOpenRouterApiKey();
+      postBackendMessage({ type: "openRouterKeyStatus", hasKey });
     } else if (msg.type === "requestFullCode") {
       const req = msg as RequestFullCodeMessage;
       postFullCode(req.purpose === "display" ? "display" : "copy");
     } else if (msg.type === "get-selection-json") {
       const nodeJson = await exportSelectionJson(figma.currentPage.selection);
-      console.log(
-        "[DEBUG] Exported node JSON:",
-        "message" in nodeJson
-          ? nodeJson.message
-          : `jsonCount=${nodeJson.json?.length ?? 0}, newConversionCount=${nodeJson.newConversion?.length ?? 0}`,
-      );
       figma.ui.postMessage({
         type: "selection-json",
         data: nodeJson,
@@ -307,33 +293,27 @@ const standardMode = async () => {
     scheduleRun();
   });
 
-  // Do not register `documentchange` with documentAccess: "dynamic-page".
-  // It requires figma.loadAllPagesAsync() first, which we avoid for memory.
-  // Selection changes (and Tidy + Convert / settings) are enough to refresh.
-
-  // Do not wait for ui-ready — the iframe can post it before onmessage is bound.
+  /*
+   * Skip documentchange: with dynamic-page access it requires loadAllPagesAsync(),
+   * which we avoid for memory. Selection changes, settings, and explicit tidy
+   * are enough to refresh preview output.
+   *
+   * Also call initializeOnce immediately — ui-ready may arrive before onmessage
+   * is attached.
+   */
   void initializeOnce();
 };
 
 const codegenMode = async () => {
-  console.log("[DEBUG] codegenMode - Starting codegen mode initialization");
   await getUserSettings();
 
   figma.codegen.on(
     "generate",
     async ({ node }: CodegenEvent): Promise<CodegenResult[]> => {
-      console.log(
-        `[DEBUG] codegen.generate - Node: id=${node.id}, type=${node.type}`,
-      );
-
       const convertedSelection = (await nodesToJSON(
         [node],
         userPluginSettings,
       )) as unknown as SceneNode[];
-      console.log(
-        "[DEBUG] codegen.generate - Converted selection count:",
-        convertedSelection.length,
-      );
 
       return [
         {
@@ -355,14 +335,11 @@ const codegenMode = async () => {
 switch (figma.mode) {
   case "default":
   case "inspect":
-    console.log("[DEBUG] Starting plugin in", figma.mode, "mode");
     standardMode();
     break;
   case "codegen":
-    console.log("[DEBUG] Starting plugin in codegen mode");
     codegenMode();
     break;
   default:
-    console.log("[DEBUG] Unknown plugin mode:", figma.mode);
     break;
 }

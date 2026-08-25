@@ -1,3 +1,5 @@
+/** Walks the clone tree and builds a TidyPlan (Auto Layout specs, wrappers, group conversions). */
+
 import {
   ALIGN_EPS,
   ChildGeom,
@@ -84,7 +86,7 @@ function childSizingFor(
   contentBox: Rect,
   _axis: "HORIZONTAL" | "VERTICAL" | null,
 ): ChildSizingSpec {
-  // Pixel fidelity: always FIXED. FILL/HUG often reflows and shifts the design.
+  // Convert always needs FIXED boxes — HUG/FILL reflows and shifts pixels away from the design.
   void contentBox;
   return {
     nodeId: item.node.id,
@@ -111,7 +113,7 @@ function inferCounterAlign(
 
   for (const item of items) {
     if (axis === "HORIZONTAL") {
-      // counter = Y
+      // Counter-axis is Y when the primary flow is horizontal.
       starts.push(item.rect.y);
       centers.push(rectCenterY(item.rect));
       ends.push(rectBottom(item.rect));
@@ -137,7 +139,7 @@ function inferCounterAlign(
   const endSame = ends.every((e) => nearlyEqual(e, ends[0]));
   const centerSame = centers.every((c) => nearlyEqual(c, centers[0]));
 
-  // Baseline for text-only rows
+  // Text+icon rows may align on baseline instead of box edges.
   if (
     axis === "HORIZONTAL" &&
     items.every(
@@ -168,7 +170,7 @@ function inferCounterAlign(
   if (endSame && !startSame) return { parent: "MAX", perChild };
   if (centerSame) return { parent: "CENTER", perChild };
 
-  // Mixed → per-child
+  // Per-child alignment when siblings disagree — constraints and position hints break ties.
   for (const item of items) {
     const hints = constraintHints(item.node);
     if (axis === "HORIZONTAL") {
@@ -275,7 +277,7 @@ function inferPrimaryMetrics(
       padB = axis === "VERTICAL" ? 0 : padB;
     } else if (sd <= GAP_EPS) {
       itemSpacing = roundPx(Math.max(0, med));
-      // Centered cluster?
+      // Content cluster centered in the parent with equal leading/trailing inset.
       const contentStart = axis === "HORIZONTAL" ? first.rect.x : first.rect.y;
       const contentEnd =
         axis === "HORIZONTAL" ? rectRight(last.rect) : rectBottom(last.rect);
@@ -299,7 +301,7 @@ function inferPrimaryMetrics(
         }
       }
     } else {
-      // Two-scale gaps: use median of the smaller cluster
+      // Mixed gap scales (e.g. section spacing vs item spacing) — use the tighter cluster gap.
       const sortedGaps = [...positiveGaps]
         .map((g) => Math.max(0, g))
         .sort((a, b) => a - b);
@@ -311,7 +313,7 @@ function inferPrimaryMetrics(
     }
   }
 
-  // Negative gaps already filtered to absolute in classify; remaining slight overlap → 0
+  // Residual overlap in an otherwise clean stack → treat spacing as zero.
   if (gaps.some((g) => g < -ALIGN_EPS)) {
     itemSpacing = 0;
   }
@@ -368,7 +370,7 @@ function buildWrapper(
     width: 0,
     height: 0,
   };
-  // Local metrics relative to wrapper bounds
+  // Metrics are relative to the wrapper's union bounds, not the parent frame.
   const localItems: ChildGeom[] = items.map((i) => ({
     ...i,
     rect: {
@@ -431,7 +433,6 @@ function inferStructure(
     const sizing = childSizingFor(item, metrics.contentBox, "VERTICAL");
     const hints = constraintHints(item.node);
     if (hints.preferCenterH || hints.preferCenterV) {
-      // keep
     }
     return {
       layout: makeLayout("VERTICAL", metrics, "MIN"),
@@ -441,7 +442,7 @@ function inferStructure(
     };
   }
 
-  // Prefer clean single-axis stacks
+  // Single-axis stacks map directly to one Auto Layout frame.
   if (isCleanStack(flow, "VERTICAL")) {
     const metrics = inferPrimaryMetrics(flow, parentRect, "VERTICAL");
     const { parent: counter, perChild } = inferCounterAlign(
@@ -484,7 +485,7 @@ function inferStructure(
     };
   }
 
-  // Column of rows
+  // Row bands inside a vertical stack → horizontal wrapper frames per band.
   const rowBands = bandSplit(flow, "VERTICAL");
   if (rowBands.length >= 2 && rowBands.some((b) => b.length >= 2)) {
     const wrappers: WrapperSpec[] = [];
@@ -536,7 +537,7 @@ function inferStructure(
     }
   }
 
-  // Row of columns
+  // Column bands inside a horizontal stack → vertical wrapper frames per band.
   const colBands = bandSplit(flow, "HORIZONTAL");
   if (colBands.length >= 2 && colBands.some((b) => b.length >= 2)) {
     const wrappers: WrapperSpec[] = [];
@@ -586,7 +587,7 @@ function inferStructure(
     };
   }
 
-  // Grid / wrap
+  // Uniform-height grid or ragged wrap as a last resort before falling back to absolute.
   const grid = tryInferGridOrWrap(flow, parentRect);
   if (grid) return { ...grid, fallbackAbsolute: [] };
 
@@ -761,7 +762,7 @@ function walkForPlan(node: SceneNode, plan: TidyPlan): void {
       return;
     }
     plan.groupsToFrame.push(group.id);
-    // Infer as if this group were already a freeform frame (id remapped in apply).
+    // Group nodes become frames in apply — infer layout here using remapped ids later.
     if (group.children.length > 0) {
       plan.frames.push(
         inferFrame(
@@ -793,6 +794,7 @@ function walkForPlan(node: SceneNode, plan: TidyPlan): void {
     const frame = node as FrameNode | ComponentNode | ComponentSetNode;
 
     if (isAutoLayoutFrame(frame)) {
+      // Existing Auto Layout is left intact at this frame; only freeform descendants are inferred.
       tidyWarn(
         `Skipped Auto Layout frame "${frame.name}" (descendants may still tidy)`,
       );
@@ -813,7 +815,7 @@ function walkForPlan(node: SceneNode, plan: TidyPlan): void {
       return;
     }
 
-    // Freeform frame
+    // Freeform frame — candidate for Auto Layout inference.
     if (frame.children.length === 0) return;
 
     const spec = inferFrame(
@@ -844,7 +846,7 @@ export function buildTidyPlan(root: SceneNode): TidyPlan {
     warnings: [],
   };
   walkForPlan(root, plan);
-  // groupsToFrame: process deepest first (reverse of discovery if DFS pre-order → reverse)
+  // Deepest groups convert first so parent ids remain valid during apply.
   plan.groupsToFrame.reverse();
   plan.groupsToUnwrap.reverse();
   return plan;

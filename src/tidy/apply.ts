@@ -1,3 +1,5 @@
+/** Applies an inferred TidyPlan to the live clone with pixel-drift rollback. */
+
 import type {
   AutoLayoutSpec,
   FrameTidySpec,
@@ -19,7 +21,7 @@ async function getNode(id: string): Promise<BaseNode | null> {
 }
 
 function applyAutoLayout(frame: BaseFrameMixin, layout: AutoLayoutSpec): void {
-  // Pixel-stable defaults: never hug the parent; keep exact outer size.
+  // FIXED outer size prevents Auto Layout from resizing the frame away from the snapshot.
   frame.layoutMode = layout.layoutMode;
   frame.primaryAxisSizingMode = "FIXED";
   frame.counterAxisSizingMode = "FIXED";
@@ -28,7 +30,7 @@ function applyAutoLayout(frame: BaseFrameMixin, layout: AutoLayoutSpec): void {
   frame.paddingTop = layout.paddingTop;
   frame.paddingBottom = layout.paddingBottom;
   frame.itemSpacing = layout.itemSpacing;
-  // Prefer MIN — CENTER / SPACE_BETWEEN / BASELINE often shift pixels.
+  // Conservative alignment: only use inferred values when they were explicitly chosen.
   frame.primaryAxisAlignItems =
     layout.primaryAxisAlignItems === "SPACE_BETWEEN"
       ? "SPACE_BETWEEN"
@@ -56,7 +58,7 @@ function applyAutoLayout(frame: BaseFrameMixin, layout: AutoLayoutSpec): void {
   }
 }
 
-/** Always FIXED sizes so Auto Layout cannot resize children. */
+/** Pin child to FIXED sizing so convert sees the same pixel box as before tidy. */
 function pinFixedSize(node: SceneNode, w: number, h: number): void {
   if (!("layoutSizingHorizontal" in node)) return;
   const n = node as SceneNode & {
@@ -73,8 +75,8 @@ function pinFixedSize(node: SceneNode, w: number, h: number): void {
     if ("resize" in n) {
       (n as LayoutMixin).resize(Math.max(1, w), Math.max(1, h));
     }
-  } catch (e) {
-    console.warn("[tidy] pinFixedSize failed", node.name, e);
+  } catch {
+    // Some node types reject layout sizing writes.
   }
 }
 
@@ -96,8 +98,8 @@ function applyAbsoluteAt(
     if (typeof w === "number" && typeof h === "number" && "resize" in node) {
       (node as LayoutMixin).resize(Math.max(1, w), Math.max(1, h));
     }
-  } catch (e) {
-    console.warn("[tidy] applyAbsoluteAt failed", node.name, e);
+  } catch {
+    // Absolute positioning is not supported on every node type.
   }
 }
 
@@ -105,8 +107,8 @@ function safeRemove(node: BaseNode): void {
   try {
     if (!node.parent) return;
     node.remove();
-  } catch (e) {
-    console.warn("[tidy] safeRemove skipped (node already gone)", e);
+  } catch {
+    // Figma may have already removed the node (e.g. empty group cleanup).
   }
 }
 
@@ -148,8 +150,8 @@ function convertGroupToFrame(group: GroupNode): FrameNode {
       frame.appendChild(node);
       node.x = x;
       node.y = y;
-    } catch (e) {
-      console.warn("[tidy] convertGroupToFrame child move failed", node.id, e);
+    } catch {
+      // Child may refuse reparenting during group→frame conversion.
     }
   }
 
@@ -231,7 +233,7 @@ async function createWrapperFrame(
     pinFixedSize(node, w, h);
   }
 
-  // Defer Auto Layout on wrapper until sizes are pinned — still FIXED children.
+  // Apply layout only after children are pinned — still re-pin afterward because AL can nudge sizes.
   applyAutoLayout(frame, {
     ...spec.layout,
     primaryAxisAlignItems: "MIN",
@@ -252,8 +254,8 @@ async function createWrapperFrame(
 }
 
 /**
- * Keep background as absolute at its original box — never fold fills
- * (folding drops strokes / radius quirks and shifts paint).
+ * Background layers stay absolute at their snapshot box — folding fills into the parent
+ * drops strokes/radius and shifts paint, breaking pixel fidelity for convert.
  */
 async function pinBackgroundAbsolute(
   bgId: string,
@@ -290,7 +292,7 @@ async function applyFrameSpec(
   const preChildren = snapTree(frame);
 
   try {
-    // Never fold backgrounds — pin absolute at original box instead.
+    // Pin backgrounds before wrappers/Auto Layout so decorative fills never enter the flow.
     const bgId = spec.foldBackgroundId || spec.stretchBackgroundId;
     if (bgId) {
       await pinBackgroundAbsolute(bgId, before, frame);
@@ -300,7 +302,7 @@ async function applyFrameSpec(
       await createWrapperFrame(frame, wrapper, before);
     }
 
-    // Absolute children at snapshot-relative coords
+    // Overlays and rotated layers use pre-tidy absolute coords relative to the frame.
     const frameAbsNow = frame.absoluteBoundingBox;
     for (const abs of spec.absoluteChildren) {
       const child = await getNode(abs.nodeId);
@@ -324,7 +326,7 @@ async function applyFrameSpec(
       const w = frameSnap?.w ?? frame.width;
       const h = frameSnap?.h ?? frame.height;
 
-      // Pin every non-absolute direct child to FIXED before reflow.
+      // Pin flow children to FIXED before enabling Auto Layout so reflow cannot resize them.
       for (const child of [...frame.children]) {
         if (
           "layoutPositioning" in child &&
@@ -341,7 +343,7 @@ async function applyFrameSpec(
 
       applyAutoLayout(frame, {
         ...spec.layout,
-        // Prefer MIN alignment for pixel stability unless SPACE_BETWEEN was inferred.
+        // Only honor MAX/CENTER when inference explicitly detected them; otherwise MIN for stability.
         counterAxisAlignItems:
           spec.layout.counterAxisAlignItems === "MAX" ||
           spec.layout.counterAxisAlignItems === "CENTER"
@@ -352,7 +354,7 @@ async function applyFrameSpec(
       frame.primaryAxisSizingMode = "FIXED";
       frame.counterAxisSizingMode = "FIXED";
 
-      // Re-pin after reflow (AL can still nudge hug text, etc.)
+      // Auto Layout can still nudge text/hug nodes — re-pin from the snapshot.
       for (const child of [...frame.children]) {
         if (
           "layoutPositioning" in child &&
@@ -376,7 +378,7 @@ async function applyFrameSpec(
       }
     }
 
-    // Validate this frame subtree against the pre-tidy snapshot.
+    // Revert this frame if any descendant moved — convert must see identical pixels.
     const bad = driftedIds(frame, before);
     if (bad.length > 0) {
       tidyWarn(
@@ -390,10 +392,8 @@ async function applyFrameSpec(
 }
 
 /**
- * Apply a TidyPlan to the live clone tree.
- * Mutates Figma nodes; call while isTidying is true.
- * Guarantees: if Auto Layout would move pixels, that frame is reverted
- * to freeform absolute matching the pre-tidy snapshot.
+ * Mutates the clone tree in place. Any frame that would shift pixels is rolled back
+ * to freeform absolute positions matching the pre-apply snapshot.
  */
 export async function applyTidyPlan(
   plan: TidyPlan,
@@ -445,15 +445,16 @@ export async function applyTidyPlan(
     }
   }
 
-  // Snapshot AFTER group→frame (should be visually identical) and BEFORE AL.
+  // Snapshot after group→frame conversion (visually identical) but before Auto Layout runs.
   const before = snapTree(root);
 
+  // Deepest frames first so parent layout sees finalized child structure.
   const ordered = [...plan.frames].reverse();
   for (const spec of ordered) {
     await applyFrameSpec(spec, before);
   }
 
-  // Final whole-tree check — restore any remaining drift on the root frame.
+  // Last-resort rollback on the root if nested frames left residual drift.
   const finalBad = driftedIds(root, before);
   if (finalBad.length > 0 && root.type === "FRAME") {
     tidyWarn(

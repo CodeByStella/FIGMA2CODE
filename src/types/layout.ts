@@ -1,3 +1,4 @@
+/** Layout positioning and sizing values used when emitting CSS from Figma nodes. */
 export type LayoutMode =
   | ""
   | "Absolute"

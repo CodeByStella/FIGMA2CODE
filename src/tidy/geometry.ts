@@ -1,4 +1,4 @@
-/** Geometry helpers for Auto Layout inference. */
+/** Shared geometry, tolerances, and band-splitting for tidy inference. */
 
 export const ALIGN_EPS = 2;
 export const GAP_EPS = 4;
@@ -56,7 +56,7 @@ export function counterOverlapRatio(
   axis: "HORIZONTAL" | "VERTICAL",
 ): number {
   if (axis === "HORIZONTAL") {
-    // primary X → counter is Y
+    // Primary axis is X; counter-axis overlap is measured on Y.
     const o = intervalOverlap(a.y, rectBottom(a), b.y, rectBottom(b));
     const m = Math.min(a.height, b.height);
     return m <= 0 ? 0 : o / m;
@@ -123,7 +123,7 @@ export type ChildGeom = {
   node: SceneNode;
   index: number;
   rect: Rect;
-  /** Layout size (width/height), prefer over bbox when available */
+  /** Layout width/height when available — preferred over bbox for padding/gap inference. */
   layoutW: number;
   layoutH: number;
   layoutX: number;
@@ -187,12 +187,12 @@ export function parentAbsRect(node: SceneNode): Rect | null {
 }
 
 /**
- * Cluster items into bands along the primary axis using counter-axis overlap.
- * Returns bands sorted along the band axis (Y for row-bands, X for column-bands).
+ * Group flow items into row/column bands by counter-axis overlap.
+ * Requires primary-axis overlap too — counter-aligned but separated items start a new band.
  */
 export function bandSplit(
   items: ChildGeom[],
-  /** Axis of the band stack: VERTICAL = row-bands stacked by Y; HORIZONTAL = column-bands by X */
+  /** VERTICAL = horizontal row bands stacked by Y; HORIZONTAL = vertical column bands stacked by X. */
   bandAxis: "HORIZONTAL" | "VERTICAL",
 ): ChildGeom[][] {
   if (items.length === 0) return [];
@@ -213,7 +213,7 @@ export function bandSplit(
         counterOverlapRatio(c.rect, item.rect, counter) >=
         COUNTER_OVERLAP_RATIO,
     );
-    // Also check primary-axis separation: if no primary overlap with any in band, new band
+    // Counter-axis overlap alone is insufficient — items must also overlap on the band axis.
     const primaryOverlap = current.some((c) => {
       if (bandAxis === "VERTICAL") {
         return (
@@ -238,8 +238,6 @@ export function bandSplit(
     if (overlapsBand && primaryOverlap) {
       current.push(item);
     } else if (overlapsBand) {
-      // Counter-aligned but separated on primary → still same visual "row/col" if close?
-      // Plan: maximal set whose Y intervals overlap. So primary overlap required for same band.
       bands.push(current);
       current = [item];
     } else {
@@ -249,7 +247,7 @@ export function bandSplit(
   }
   bands.push(current);
 
-  // Sort items within each band along the counter's perpendicular (flow direction inside band)
+  // Order within each band follows the flow direction (left-to-right or top-to-bottom).
   for (const band of bands) {
     band.sort((a, b) =>
       bandAxis === "VERTICAL" ? a.rect.x - b.rect.x : a.rect.y - b.rect.y,
@@ -258,7 +256,7 @@ export function bandSplit(
   return bands;
 }
 
-/** True if items form a single clean stack on `axis` with no primary overlaps. */
+/** True when items form a non-overlapping stack along one axis — safe for direct Auto Layout. */
 export function isCleanStack(
   items: ChildGeom[],
   axis: "HORIZONTAL" | "VERTICAL",

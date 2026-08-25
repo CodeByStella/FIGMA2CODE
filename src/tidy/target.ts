@@ -1,3 +1,5 @@
+/** Resolves what the user selected (or the whole page) into a tidy target. */
+
 export type TargetKind = "single" | "multi" | "page";
 
 export type ResolvedTarget = {
@@ -13,8 +15,8 @@ function isSceneNode(n: BaseNode): n is SceneNode {
 }
 
 /**
- * Resolve what to tidy from the current selection.
- * Empty selection → all visible top-level children of the current page.
+ * Empty selection tidies all visible top-level page children — common when the user
+ * wants a full-page export without manually selecting every frame.
  */
 export function resolveTidyTarget(): ResolvedTarget {
   const selection = figma.currentPage.selection.filter(isSceneNode);

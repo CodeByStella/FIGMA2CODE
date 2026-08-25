@@ -36,7 +36,6 @@ export const htmlBorderRadius = (node: SceneNode, isJsx: boolean): string[] => {
       radius.bottomLeft,
     ];
 
-    // Map each corner value to its corresponding CSS property
     const cornerProperties = [
       "border-top-left-radius",
       "border-top-right-radius",
@@ -44,7 +43,6 @@ export const htmlBorderRadius = (node: SceneNode, isJsx: boolean): string[] => {
       "border-bottom-left-radius",
     ];
 
-    // Add CSS properties for non-zero corner values
     for (let i = 0; i < 4; i++) {
       if (cornerValues[i] > 0) {
         comp.push(formatWithJSX(cornerProperties[i], isJsx, cornerValues[i]));

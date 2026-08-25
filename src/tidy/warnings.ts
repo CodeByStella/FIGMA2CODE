@@ -1,3 +1,5 @@
+/** Collects tidy-stage warnings and forwards them into the convert warning stream. */
+
 import { addWarning } from "../convert/warnings";
 
 const tidyNotes: string[] = [];

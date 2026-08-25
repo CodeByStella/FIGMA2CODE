@@ -1,8 +1,7 @@
 import { FontWeightNumber } from "types";
 
-// Convert generic named weights to numbers, which is the way tailwind understands
+// Map Figma font style names to numeric weights for CSS output.
 export const convertFontWeight = (weight: string): FontWeightNumber | null => {
-  // change extra-light to extralight
   weight = weight.replaceAll(" ", "").replaceAll("-", "").toLowerCase();
   switch (weight) {
     case "thin":

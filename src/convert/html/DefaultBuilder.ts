@@ -1,3 +1,4 @@
+// Builds style/data attributes for a single node (position, fills, borders, shadows).
 import { formatWithJSX } from "../css/format";
 import { htmlShadow } from "./shadow";
 import {
@@ -108,7 +109,6 @@ export class HtmlDefaultBuilder {
 
     const strokeAlign = "strokeAlign" in node ? node.strokeAlign : "INSIDE";
 
-    // Function to create border value string
     const consolidateBorders = (border: number): string =>
       [`${numberToFixedString(border)}px`, color, borderStyle]
         .filter((d) => d)
@@ -148,13 +148,13 @@ export class HtmlDefaultBuilder {
           );
         }
       } else {
-        // Default: use regular border on autolayout + strokeAlign: inside
+        // INSIDE stroke on auto-layout frames maps cleanly to border.
         this.addStyles(
           formatWithJSX("border", this.isJSX, consolidateBorders(weight)),
         );
       }
     } else {
-      // For non-uniform borders, always use individual border properties
+      // Per-side weights need individual border-* properties.
       if (commonBorder.left !== 0) {
         this.addStyles(
           formatWithJSX(
@@ -234,7 +234,6 @@ export class HtmlDefaultBuilder {
     if (backgroundValues) {
       this.addStyles(formatWithJSX("background", this.isJSX, backgroundValues));
 
-      // Add blend mode property if multiple fills exist with different blend modes
       if (paintArray !== figma.mixed) {
         const blendModes = this.buildBackgroundBlendModes(paintArray);
         if (blendModes) {
@@ -258,7 +257,7 @@ export class HtmlDefaultBuilder {
       return "";
     }
 
-    // Reverse the array to match the background order
+    // Match buildBackgroundValues paint reversal so blend modes align with layers.
     const blendModes = [...paintArray].reverse().map((paint) => {
       if (paint.blendMode === "PASS_THROUGH") {
         return "normal";
@@ -301,7 +300,7 @@ export class HtmlDefaultBuilder {
       this.addStyles(width, height);
     }
 
-    // Add constraints as separate styles
+    // min/max width/height are separate from computed width/height strings.
     if (constraints.length > 0) {
       this.addStyles(...constraints);
     }

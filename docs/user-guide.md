@@ -35,14 +35,14 @@ Figma never “requests” a server. Conversion code in `src/` is compiled into 
 
 ### Tidy + Convert (panel button)
 
-1. Select a frame/group/section (or leave selection empty to tidy the **current page**).
-2. Click **Tidy + Convert**.
-3. The plugin clones the target to the right of the original as `{name} / tidied`, infers Auto Layout on freeform structure, then converts that clone.
-4. Clicking again for the same source **replaces** the previous tidy clone.
-5. Already Auto Layout frames are left as-is; instances stay linked (no detach).
-6. Later (Phase 2) the visible clone can become invisible / JSON-only so conversion looks direct.
+1. Open **About** and save your **OpenRouter API key** (required). Key is stored only in Figma `clientStorage` on this machine.
+2. Select a frame/group/section (or leave selection empty to tidy the **current page**).
+3. Click **Tidy + Convert**.
+4. The plugin clones the target beside the original, sends a screenshot + layer list to OpenRouter (`xiaomi/mimo-v2.5`), builds section frames from AI split lines, infers Auto Layout, then converts that clone.
+5. Clicking again for the same source **replaces** the previous tidy clone.
+6. Already Auto Layout frames are left as-is; instances stay linked (no detach).
 
-Details: [Logic — Tidy + Convert](./logic.md#tidy--convert-phase-1).
+Details: [Logic — Tidy + Convert](./logic.md#tidy--convert-phase-1--ai-vision).
 
 ---
 
@@ -109,11 +109,9 @@ You only re-import if the manifest path changes or Figma “forgets” the link.
 
 ## Runtime debug console
 
-Yes. There are **two** consoles (main thread ≠ UI).
+Yes. There are **two** consoles (main thread ≠ UI). Console logging is currently stripped from the repo; add `console.*` only where you need it.
 
 ### 1. Main thread (`code.js` / `src/plugin.ts`)
-
-Logs from `console.log` in `src/plugin.ts` and conversion code (benchmarks, settings).
 
 1. Figma Desktop, design file open
 2. Top-left menu → **Plugins → Development → Open Console…**  
@@ -121,8 +119,6 @@ Logs from `console.log` in `src/plugin.ts` and conversion code (benchmarks, sett
 3. Use the **Console** tab in that window
 
 Optional: **Plugins → Development → Use Developer VM** — better for breakpoints / `debugger;`.
-
-This repo already logs a lot there (`[DEBUG]`, `[benchmark]`, …). Re-run the plugin after rebuilds to see new output.
 
 **Wrong place:** F12 on the Figma app shows Figma’s own logs, not your plugin sandbox.
 
@@ -250,4 +246,4 @@ A: Removed. The panel shows generated code and **Download ZIP** so large frames 
 A: No. Selection changes generate HTML + CSS only (a short snippet in the panel). **Download ZIP** exports assets and streams files to the browser. Dev Mode **codegen** generates code only (no ZIP).
 
 **Q: What does Tidy + Convert do?**  
-A: It clones the selection (or page) beside the original, infers Auto Layout on freeform layers, then converts that clone. Re-run replaces the previous clone. Already Auto Layout frames and linked instances are left alone.
+A: Saves an OpenRouter key in About, then clones the selection, uses vision (`xiaomi/mimo-v2.5`) to propose section splits/names, builds section frames, infers Auto Layout (with pixel-safe revert), and converts the clone.

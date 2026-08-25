@@ -1,3 +1,4 @@
+/** Clickable swatches for solid colors extracted during conversion. */
 import { useState } from "react";
 import { SolidColorConversion } from "types";
 
@@ -13,9 +14,8 @@ const ColorsPanel = (props: {
     props.onColorClick(value);
   };
 
-  // Helper function to format complex color values
+  /** Shorten CSS variable values for the swatch label */
   const formatColorValue = (value: string) => {
-    // Extract CSS variable name if present
     if (value.includes("var(--")) {
       const varMatch = value.match(/var\(--([\w-]+)/);
       return varMatch ? `--${varMatch[1]}` : value;
@@ -49,7 +49,7 @@ const ColorsPanel = (props: {
             onClick={() => {
               handleButtonClick(color.exportValue, idx);
             }}
-            title={color.exportValue} // Show full value on hover
+            title={color.exportValue}
           >
             <div className="flex flex-col h-full justify-center items-center">
               <span

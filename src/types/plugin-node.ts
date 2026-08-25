@@ -9,7 +9,7 @@ export type PluginAltNodeMetadata<T extends BaseNode> = {
   base64?: string;
 };
 
-/** Live plugin SceneNode plus flatten / embed metadata. */
+/** Live SceneNode enriched with flatten/embed metadata during conversion. */
 export type PluginAltNode<T extends BaseNode> = T & PluginAltNodeMetadata<T>;
 
 export type ExportableNode = SceneNode & ExportMixin & MinimalFillsMixin;

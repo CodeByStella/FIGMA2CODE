@@ -1,3 +1,4 @@
+/** Syntax-highlighted HTML preview; full document is fetched from main on demand. */
 import { useMemo, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { coldarkDark as theme } from "react-syntax-highlighter/dist/esm/styles/prism";

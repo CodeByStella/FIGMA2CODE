@@ -2,11 +2,15 @@ import { addWarning } from "../warnings";
 import { withTimeout } from "../media/exportAsync";
 import { PluginSettings, RestAltNode } from "types";
 import { variableToColorName } from "../color/variables";
-import { HasGeometryTrait, Node, Paint } from "../../types/figma-rest";
+import { Node, Paint } from "../../types/figma-rest";
 import { calculateRectangleFromBoundingBox } from "../layout/position";
 import { isLikelyIcon } from "./icons";
 
-// Performance tracking counters
+/**
+ * Enrich JSON_REST_V1 export with plugin-API-only fields (text segments, variables, SVG flatten).
+ * Called for every selection change before HTML emit.
+ */
+// Optional timing counters (not logged by default; keep for local profiling hooks).
 export let getNodeByIdAsyncTime = 0;
 export let getNodeByIdAsyncCalls = 0;
 export let getStyledTextSegmentsTime = 0;
@@ -23,7 +27,7 @@ export const resetPerformanceCounters = () => {
   processColorVariablesCalls = 0;
 };
 
-// Keep track of node names for sequential numbering
+// Duplicate layer names get a numeric suffix so generated HTML ids stay unique.
 const nodeNameCounters: Map<string, number> = new Map();
 
 const variableCache = new Map<string, string>();
@@ -32,9 +36,7 @@ export const clearVariableCache = () => {
   variableCache.clear();
 };
 
-/**
- * Maps variable IDs to color names and caches the result
- */
+/** Resolve Figma variable id → CSS-safe name; cached per conversion run. */
 const memoizedVariableToColorName = async (
   variableId: string,
 ): Promise<string> => {
@@ -49,9 +51,7 @@ const memoizedVariableToColorName = async (
   return variableCache.get(variableId)!;
 };
 
-/**
- * Maps a color hex value to its variable name using node-specific color mappings
- */
+/** Look up a bound variable name from a hex key in a node's SVG color map. */
 export const getVariableNameFromColor = (
   hexColor: string,
   colorMappings?: Map<string, { variableId: string; variableName: string }>,
@@ -69,7 +69,8 @@ export const getVariableNameFromColor = (
 };
 
 /**
- * Collects all color variables used in a node and its descendants
+ * Build hex → variable map for a subtree. SVG export uses literal colors;
+ * this map lets svg.ts rewrite them to var(--name, fallback).
  */
 const collectNodeColorVariables = async (
   node: any,
@@ -79,21 +80,17 @@ const collectNodeColorVariables = async (
     { variableId: string; variableName: string }
   >();
 
-  // Helper function to add a mapping from a paint object
   const addMappingFromPaint = (paint: any) => {
-    // Ensure we have a solid paint, a resolved variable name, and color data
     if (
       paint.type === "SOLID" &&
       paint.variableColorName &&
       paint.color &&
       paint.boundVariables?.color
     ) {
-      // Prefer the actual variable name from the bound variable if available
       const variableName =
         paint.boundVariables.color.name || paint.variableColorName;
 
       if (variableName) {
-        // Sanitize the variable name for CSS
         const sanitizedVarName = variableName.replace(/[^a-zA-Z0-9_-]/g, "-");
 
         const colorInfo = {
@@ -101,46 +98,37 @@ const collectNodeColorVariables = async (
           variableName: sanitizedVarName,
         };
 
-        // Create hex representation of the color
         const r = Math.round(paint.color.r * 255);
         const g = Math.round(paint.color.g * 255);
         const b = Math.round(paint.color.b * 255);
 
-        // Standard hex format (lowercase for consistent mapping)
         const hexColor =
           `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`.toLowerCase();
         colorMappings.set(hexColor, colorInfo);
 
-        // Add common named colors that the SVG might use
-        // When htmlColor() in builderImpl/htmlColor.ts converts colors to strings,
-        // it returns "white" for RGB(1,1,1) and "black" for RGB(0,0,0)
+        // htmlColor() emits named "white"/"black" for pure RGB; SVG strings may use those too.
         if (r === 255 && g === 255 && b === 255) {
-          colorMappings.set("white", colorInfo); // Classic CSS color name
-          colorMappings.set("rgb(255,255,255)", colorInfo); // RGB format
+          colorMappings.set("white", colorInfo);
+          colorMappings.set("rgb(255,255,255)", colorInfo);
         } else if (r === 0 && g === 0 && b === 0) {
           colorMappings.set("black", colorInfo);
           colorMappings.set("rgb(0,0,0)", colorInfo);
         }
-        // Add other frequently used named colors if needed
       }
     }
   };
 
-  // Process fills
   if (node.fills && Array.isArray(node.fills)) {
     node.fills.forEach(addMappingFromPaint);
   }
 
-  // Process strokes
   if (node.strokes && Array.isArray(node.strokes)) {
     node.strokes.forEach(addMappingFromPaint);
   }
 
-  // Process children recursively
   if (node.children && Array.isArray(node.children)) {
     for (const child of node.children) {
       const childMappings = await collectNodeColorVariables(child);
-      // Merge child mappings with this node's mappings
       childMappings.forEach((value, key) => {
         colorMappings.set(key, value);
       });
@@ -150,10 +138,7 @@ const collectNodeColorVariables = async (
   return colorMappings;
 };
 
-/**
- * Process color variables in a paint style and add pre-computed variable names
- * @param paint The paint style to process (fill or stroke)
- */
+/** Attach variableColorName to paints so html/color.ts can emit var(--token, fallback). */
 export const processColorVariables = async (paint: Paint) => {
   const start = Date.now();
   processColorVariablesCalls++;
@@ -164,12 +149,10 @@ export const processColorVariables = async (paint: Paint) => {
     paint.type === "GRADIENT_LINEAR" ||
     paint.type === "GRADIENT_RADIAL"
   ) {
-    // Filter stops with bound variables first to avoid unnecessary work
     const stopsWithVariables = paint.gradientStops.filter(
       (stop) => stop.boundVariables?.color,
     );
 
-    // Process all gradient stops with variables in parallel
     if (stopsWithVariables.length > 0) {
       await Promise.all(
         stopsWithVariables.map(async (stop) => {
@@ -180,7 +163,6 @@ export const processColorVariables = async (paint: Paint) => {
       );
     }
   } else if (paint.type === "SOLID" && paint.boundVariables?.color) {
-    // Pre-compute and store the variable name
     (paint as any).variableColorName = await memoizedVariableToColorName(
       paint.boundVariables.color.id,
     );
@@ -196,7 +178,6 @@ const processEffectVariables = async (
   processColorVariablesCalls++;
 
   if (paint.boundVariables?.color) {
-    // Pre-compute and store the variable name
     (paint as any).variableColorName = await memoizedVariableToColorName(
       paint.boundVariables.color.id,
     );
@@ -206,30 +187,33 @@ const processEffectVariables = async (
 };
 
 const getColorVariables = async (
-  node: HasGeometryTrait,
+  node: RestAltNode,
   settings: PluginSettings,
 ) => {
-  // This tries to be as fast as it can, using Promise.all so it can parallelize calls.
   if (settings.useColorVariables) {
-    if (node.fills && Array.isArray(node.fills)) {
+    if ("fills" in node && Array.isArray(node.fills)) {
       await Promise.all(
-        node.fills.map((fill: Paint) => processColorVariables(fill)),
+        (node.fills as Paint[]).map((fill) => processColorVariables(fill)),
       );
     }
-    if (node.strokes && Array.isArray(node.strokes)) {
+    if ("strokes" in node && Array.isArray(node.strokes)) {
       await Promise.all(
-        node.strokes.map((stroke: Paint) => processColorVariables(stroke)),
+        (node.strokes as Paint[]).map((stroke) =>
+          processColorVariables(stroke),
+        ),
       );
     }
-    if ("effects" in node && node.effects && Array.isArray(node.effects)) {
+    if ("effects" in node && Array.isArray(node.effects)) {
       await Promise.all(
         node.effects
           .filter(
-            (effect: Effect) =>
+            (effect) =>
               effect.type === "DROP_SHADOW" || effect.type === "INNER_SHADOW",
           )
-          .map((effect: DropShadowEffect | InnerShadowEffect) =>
-            processEffectVariables(effect),
+          .map((effect) =>
+            processEffectVariables(
+              effect as DropShadowEffect | InnerShadowEffect,
+            ),
           ),
       );
     }
@@ -245,29 +229,22 @@ function adjustChildrenOrder(node: any) {
   const absoluteChildren = [];
   const fixedChildren = [];
 
-  // Single pass to separate absolute and fixed children
+  // Figma reverse-Z paint order: absolute children are painted above flow children.
   for (let i = children.length - 1; i >= 0; i--) {
     const child = children[i];
     if (child.layoutPositioning === "ABSOLUTE") {
       absoluteChildren.push(child);
     } else {
-      fixedChildren.unshift(child); // Add to beginning to maintain original order
+      fixedChildren.unshift(child);
     }
   }
 
-  // Combine the arrays (reversed absolute children + original order fixed children)
   node.children = [...absoluteChildren, ...fixedChildren];
 }
 
 /**
- * Recursively process both JSON node and Figma node to update with data not available in JSON
- * This now includes the functionality from convertNodeToAltNode
- * @param jsonNode The JSON node to process
- * @param figmaNode The corresponding Figma node
- * @param settings Plugin settings
- * @param parentNode Optional parent node reference to set
- * @param parentCumulativeRotation Optional parent cumulative rotation to inherit
- * @returns Potentially modified jsonNode, array of nodes (for inlined groups), or null
+ * Walk REST JSON + live plugin node in parallel. Fills gaps JSON_REST_V1 omits
+ * (size, text segments, variables, flatten flags) and inlines GROUP children.
  */
 const processNodePair = async (
   jsonNode: RestAltNode,
@@ -275,21 +252,18 @@ const processNodePair = async (
   settings: PluginSettings,
   parentNode?: RestAltNode,
   parentCumulativeRotation: number = 0,
-): Promise<Node | Node[] | null> => {
+): Promise<RestAltNode | RestAltNode[] | null> => {
   if (!jsonNode.id) return null;
   if (jsonNode.visible === false) return null;
 
-  // Handle node type-specific conversions (from convertNodeToAltNode)
   const nodeType = jsonNode.type;
 
-  // Store the cumulative rotation (parent's cumulative + node's own)
+  // GROUP rotation is distributed to children; cumulativeRotation tracks inherited angle.
   if (parentNode) {
-    // Only add cumulative when there is a parent. This is useful for the GROUP -> FRAME transformation, where
-    // we want to move the rotation of the GROUP to children, but want to se FRAME to 0.
     jsonNode.cumulativeRotation = parentCumulativeRotation;
   }
 
-  // Handle empty frames and convert to rectangles
+  // Childless frames become rectangles so HTML emitters treat them as shapes.
   if (
     (nodeType === "FRAME" ||
       nodeType === "INSTANCE" ||
@@ -297,7 +271,6 @@ const processNodePair = async (
       nodeType === "COMPONENT_SET") &&
     (!jsonNode.children || jsonNode.children.length === 0)
   ) {
-    // Convert to rectangle
     (jsonNode as any).type = "RECTANGLE";
     return processNodePair(
       jsonNode,
@@ -312,7 +285,7 @@ const processNodePair = async (
     jsonNode.rotation = -jsonNode.rotation * (180 / Math.PI);
   }
 
-  // Inline all GROUP nodes by processing their children directly
+  // GROUPs are flattened: children are hoisted with inherited rotation, group node is dropped.
   if (nodeType === "GROUP" && jsonNode.children) {
     const processedChildren = [];
 
@@ -321,31 +294,27 @@ const processNodePair = async (
       figmaNode &&
       "children" in figmaNode
     ) {
-      // Get visible JSON children (filters out nodes with visible: false)
       const visibleJsonChildren = jsonNode.children.filter(
         (child) => child.visible !== false,
       ) as RestAltNode[];
 
-      // Map figma children to their IDs for matching
       const figmaChildrenById = new Map();
       figmaNode.children.forEach((child) => {
         figmaChildrenById.set(child.id, child);
       });
 
-      // Process all visible JSON children that have matching Figma nodes
       for (const child of visibleJsonChildren) {
         const figmaChild = figmaChildrenById.get(child.id);
-        if (!figmaChild) continue; // Skip if no matching Figma node found
+        if (!figmaChild) continue;
 
         const processedChild = await processNodePair(
           child,
           figmaChild,
           settings,
-          parentNode, // The group's parent
+          parentNode,
           parentCumulativeRotation + (jsonNode.rotation || 0),
         );
 
-        // Push the processed group children directly
         if (processedChild !== null) {
           if (Array.isArray(processedChild)) {
             processedChildren.push(...processedChild);
@@ -356,34 +325,27 @@ const processNodePair = async (
       }
     }
 
-    // Simply return the processed children; skip splicing parent's children
     return processedChildren;
   }
 
-  // Return null for unsupported nodes
   if (nodeType === "SLICE") {
     return null;
   }
 
-  // Set parent reference if parent is provided
   if (parentNode) {
     (jsonNode as any).parent = parentNode;
   }
 
-  // Ensure node has a unique name with simple numbering
   const cleanName = jsonNode.name.trim();
 
-  // Track names with simple counter
   const count = nodeNameCounters.get(cleanName) || 0;
   nodeNameCounters.set(cleanName, count + 1);
 
-  // For first occurrence, use original name; for duplicates, add sequential suffix
   jsonNode.uniqueName =
     count === 0
       ? cleanName
       : `${cleanName}_${count.toString().padStart(2, "0")}`;
 
-  // Handle text-specific properties
   if (figmaNode.type === "TEXT") {
     const getSegmentsStart = Date.now();
     getStyledTextSegmentsCalls++;
@@ -405,13 +367,11 @@ const processNodePair = async (
     ]);
     getStyledTextSegmentsTime += Date.now() - getSegmentsStart;
 
-    // Assign unique IDs to each segment
     if (styledTextSegments.length > 0) {
       const baseSegmentName = (jsonNode.uniqueName || jsonNode.name)
         .replace(/[^a-zA-Z0-9_-]/g, "")
         .toLowerCase();
 
-      // Add a uniqueId to each segment
       styledTextSegments = await Promise.all(
         styledTextSegments.map(async (segment, index) => {
           const mutableSegment: any = Object.assign({}, segment);
@@ -432,11 +392,9 @@ const processNodePair = async (
             );
           }
 
-          // For single segments, don't add index suffix
           if (styledTextSegments.length === 1) {
             (mutableSegment as any).uniqueId = `${baseSegmentName}_span`;
           } else {
-            // For multiple segments, add index suffix
             (mutableSegment as any).uniqueId =
               `${baseSegmentName}_span_${(index + 1).toString().padStart(2, "0")}`;
           }
@@ -447,27 +405,26 @@ const processNodePair = async (
       jsonNode.styledTextSegments = styledTextSegments;
     }
 
-    // Inline text style.
+    // Flatten style object onto node so HTML builders read font props at top level.
     Object.assign(jsonNode, jsonNode.style);
     if (!jsonNode.textAutoResize) {
       jsonNode.textAutoResize = "NONE";
     }
   }
 
-  // Always copy size and position
   if ("absoluteBoundingBox" in jsonNode && jsonNode.absoluteBoundingBox) {
     if (jsonNode.parent) {
-      // Extract width and height from bounding box and rotation. This is necessary because Figma JSON API doesn't have width and height.
+      // JSON_REST_V1 lacks width/height; derive from bounding box and rotation.
       const rect = calculateRectangleFromBoundingBox(
         {
           width: jsonNode.absoluteBoundingBox.width,
           height: jsonNode.absoluteBoundingBox.height,
           x:
             jsonNode.absoluteBoundingBox.x -
-            (jsonNode.parent?.absoluteBoundingBox.x || 0),
+            (jsonNode.parent?.absoluteBoundingBox?.x || 0),
           y:
             jsonNode.absoluteBoundingBox.y -
-            (jsonNode.parent?.absoluteBoundingBox.y || 0),
+            (jsonNode.parent?.absoluteBoundingBox?.y || 0),
         },
         -((jsonNode.rotation || 0) + (jsonNode.cumulativeRotation || 0)),
       );
@@ -484,14 +441,11 @@ const processNodePair = async (
     }
   }
 
-  // Add canBeFlattened property
   if (settings.embedVectors && !parentNode?.canBeFlattened) {
     const isIcon = isLikelyIcon(jsonNode as any);
     (jsonNode as any).canBeFlattened = isIcon;
 
-    // If this node will be flattened to SVG, collect its color variables
     if (isIcon && settings.useColorVariables) {
-      // Schedule color mapping collection after variable processing
       (jsonNode as any)._collectColorMappings = true;
     }
   } else {
@@ -512,7 +466,7 @@ const processNodePair = async (
 
   await getColorVariables(jsonNode, settings);
 
-  // Some places check if paddingLeft exists. This makes sure they all exist, even if 0.
+  // Downstream padding helpers assume all four sides exist, even when zero.
   if ("layoutMode" in jsonNode && jsonNode.layoutMode) {
     if (jsonNode.paddingLeft === undefined) {
       jsonNode.paddingLeft = 0;
@@ -528,7 +482,7 @@ const processNodePair = async (
     }
   }
 
-  // Set default layout properties if missing
+  // REST JSON may omit layout defaults; normalize so HTML sizing logic does not branch on undefined.
   if (!jsonNode.layoutMode) jsonNode.layoutMode = "NONE";
   if (!jsonNode.layoutGrow) jsonNode.layoutGrow = 0;
   if (!jsonNode.layoutSizingHorizontal)
@@ -541,7 +495,7 @@ const processNodePair = async (
     jsonNode.counterAxisAlignItems = "MIN";
   }
 
-  // If layout sizing is HUG but there are no children, set it to FIXED
+  // HUG with no children would produce invalid flex sizing in CSS.
   const hasChildren =
     "children" in jsonNode &&
     jsonNode.children &&
@@ -555,19 +509,16 @@ const processNodePair = async (
     jsonNode.layoutSizingVertical = "FIXED";
   }
 
-  // Process children recursively if both have children
   if (
     "children" in jsonNode &&
     jsonNode.children &&
     Array.isArray(jsonNode.children) &&
     "children" in figmaNode
   ) {
-    // Get only visible JSON children
     const visibleJsonChildren = jsonNode.children.filter(
       (child) => child.visible !== false,
     ) as RestAltNode[];
 
-    // Create a map of figma children by ID for easier matching
     const figmaChildrenById = new Map();
     figmaNode.children.forEach((child) => {
       figmaChildrenById.set(child.id, child);
@@ -577,13 +528,11 @@ const processNodePair = async (
       parentCumulativeRotation +
       (jsonNode.type === "GROUP" ? jsonNode.rotation || 0 : 0);
 
-    // Process children and handle potential null returns
-    const processedChildren = [];
+    const processedChildren: RestAltNode[] = [];
 
-    // Process all visible JSON children that have matching Figma nodes
     for (const child of visibleJsonChildren) {
       const figmaChild = figmaChildrenById.get(child.id);
-      if (!figmaChild) continue; // Skip if no matching Figma node found
+      if (!figmaChild) continue;
 
       const processedChild = await processNodePair(
         child,
@@ -602,8 +551,8 @@ const processNodePair = async (
       }
     }
 
-    // Replace children array with processed children
-    jsonNode.children = processedChildren;
+    (jsonNode as RestAltNode & { children: RestAltNode[] }).children =
+      processedChildren;
 
     if (
       jsonNode.layoutMode === "NONE" ||
@@ -618,7 +567,6 @@ const processNodePair = async (
     adjustChildrenOrder(jsonNode);
   }
 
-  // Collect color variables for SVG nodes after all processing is done
   if ((jsonNode as any)._collectColorMappings) {
     (jsonNode as any).colorVariableMappings =
       await collectNodeColorVariables(jsonNode);
@@ -628,23 +576,14 @@ const processNodePair = async (
   return jsonNode;
 };
 
-/**
- * Convert Figma nodes to JSON format with parent references added
- * @param nodes The Figma nodes to convert to JSON
- * @param settings Plugin settings
- * @returns JSON representation of the nodes with parent references
- */
+/** Export selection via JSON_REST_V1, then enrich each node through processNodePair. */
 export const nodesToJSON = async (
   nodes: ReadonlyArray<SceneNode>,
   settings: PluginSettings,
 ): Promise<Node[]> => {
-  // Reset name counters for each conversion
   nodeNameCounters.clear();
-  const exportJsonStart = Date.now();
-  // First get the JSON representation of nodes with rotation handling
   const nodeResults = await Promise.all(
     nodes.map(async (node) => {
-      // Export node to JSON
       const nodeDoc = (
         (await withTimeout(
           node.exportAsync({
@@ -657,11 +596,10 @@ export const nodesToJSON = async (
 
       let nodeCumulativeRotation = 0;
 
-      // Wire GROUPs into FRAME.
+      // GROUP → FRAME at export; rotation moves to cumulativeRotation for children.
       if (node.type === "GROUP") {
         nodeDoc.type = "FRAME";
 
-        // Fix rotation for children.
         if ("rotation" in nodeDoc && nodeDoc.rotation) {
           nodeCumulativeRotation = -nodeDoc.rotation * (180 / Math.PI);
           nodeDoc.rotation = 0;
@@ -675,20 +613,6 @@ export const nodesToJSON = async (
     }),
   );
 
-  if (nodes.length > 0) {
-    console.log("[debug] initial node summary", {
-      id: nodes[0].id,
-      type: nodes[0].type,
-      name: nodes[0].name,
-    });
-  }
-
-  console.log(
-    `[benchmark][inside nodesToJSON] JSON_REST_V1 export: ${Date.now() - exportJsonStart}ms`,
-  );
-
-  // Now process each top-level node pair (JSON node + Figma node)
-  const processNodesStart = Date.now();
   const result: Node[] = [];
 
   for (let i = 0; i < nodes.length; i++) {
@@ -701,18 +625,12 @@ export const nodesToJSON = async (
     );
     if (processedNode !== null) {
       if (Array.isArray(processedNode)) {
-        // If processNodePair returns an array (inlined group), add all nodes
         result.push(...processedNode);
       } else {
-        // If it returns a single node, add it directly
         result.push(processedNode);
       }
     }
   }
-
-  console.log(
-    `[benchmark][inside nodesToJSON] Process node pairs: ${Date.now() - processNodesStart}ms`,
-  );
 
   return result;
 };

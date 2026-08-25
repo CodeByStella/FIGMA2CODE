@@ -1,3 +1,4 @@
+/** Currying helper used by convert pipeline utilities. */
 export function curry<T extends (...args: any[]) => any>(
   fn: T,
   arity = fn.length,

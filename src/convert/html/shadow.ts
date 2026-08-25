@@ -2,17 +2,14 @@ import { htmlColor } from "./color";
 import { getCachedAsset } from "../../export/cache";
 
 /**
- * https://tailwindcss.com/docs/box-shadow/
- * example: shadow
+ * Skip box-shadow when ZIP already baked effects into the raster/SVG asset.
  */
 export const htmlShadow = (node: BlendMixin): string => {
-  // Skip CSS shadows when the ZIP export already baked effects into the asset
   const id = (node as SceneNode).id;
   const cached = id ? getCachedAsset(id) : undefined;
   if (cached?.effectsBaked || (node as any).effectsBaked) {
     return "";
   }
-  // [when testing] node.effects can be undefined
   if (node.effects && node.effects.length > 0) {
     const shadowEffects = node.effects.filter(
       (d) =>
@@ -21,7 +18,6 @@ export const htmlShadow = (node: BlendMixin): string => {
           d.type === "LAYER_BLUR") &&
         d.visible,
     );
-    // simple shadow from tailwind
     if (shadowEffects.length > 0) {
       const shadows: string[] = [];
 
@@ -49,7 +45,6 @@ export const htmlShadow = (node: BlendMixin): string => {
         shadows.push(`${x}px ${y}px ${blur}px ${spread}${color}${inner}`);
       });
 
-      // Return box-shadow in the desired format
       return shadows.join(", ");
     }
   }
