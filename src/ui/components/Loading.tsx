@@ -89,7 +89,7 @@ const Loading = ({ statusMessage, progressPercent }: LoadingProps) => {
         />
       </div>
       <p className="mt-2 text-sm leading-5 text-neutral-600 dark:text-neutral-400">
-        Generating framework code from your selection
+        Converting the selection to HTML + CSS
       </p>
     </div>
   );
