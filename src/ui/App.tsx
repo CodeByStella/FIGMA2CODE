@@ -27,6 +27,7 @@ interface AppState {
   showingFullCode: boolean;
   isLoading: boolean;
   isZipExporting: boolean;
+  isTidying: boolean;
   settings: PluginSettings | null;
   colors: SolidColorConversion[];
   gradients: LinearGradientConversion[];
@@ -57,6 +58,7 @@ export default function App() {
     showingFullCode: false,
     isLoading: false,
     isZipExporting: false,
+    isTidying: false,
     settings: null,
     colors: [],
     gradients: [],
@@ -93,11 +95,13 @@ export default function App() {
             progressPercent: null,
             isLoading: true,
             isZipExporting: false,
+            isTidying: false,
           }));
           break;
 
         case "progress": {
           const progress = untypedMessage as ProgressMessage;
+          const tidying = /tidy/i.test(progress.message || "");
           setState((prevState) => ({
             ...prevState,
             statusMessage: progress.message || prevState.statusMessage,
@@ -106,6 +110,7 @@ export default function App() {
                 ? progress.percent
                 : prevState.progressPercent,
             isLoading: prevState.isZipExporting ? prevState.isLoading : true,
+            isTidying: tidying || prevState.isTidying,
           }));
           break;
         }
@@ -121,6 +126,7 @@ export default function App() {
             progressPercent: null,
             isLoading: false,
             isZipExporting: false,
+            isTidying: false,
           }));
           break;
         }
@@ -216,6 +222,7 @@ export default function App() {
             progressPercent: null,
             isLoading: false,
             isZipExporting: false,
+            isTidying: false,
           }));
           break;
 
@@ -235,6 +242,7 @@ export default function App() {
             progressPercent: null,
             isLoading: false,
             isZipExporting: false,
+            isTidying: false,
           }));
           break;
 
@@ -243,6 +251,7 @@ export default function App() {
             ...prevState,
             isLoading: false,
             isZipExporting: false,
+            isTidying: false,
             statusMessage: prevState.statusMessage || "Conversion finished",
           }));
           break;
@@ -277,8 +286,19 @@ export default function App() {
   };
 
   const handleDownloadZip = () => {
-    if (state.isLoading || state.isZipExporting) return;
+    if (state.isLoading || state.isZipExporting || state.isTidying) return;
     parent.postMessage({ pluginMessage: { type: "exportZip" } }, "*");
+  };
+
+  const handleTidyAndConvert = () => {
+    if (state.isLoading || state.isZipExporting || state.isTidying) return;
+    setState((prev) => ({
+      ...prev,
+      isTidying: true,
+      isLoading: true,
+      statusMessage: "Tidying layout…",
+    }));
+    parent.postMessage({ pluginMessage: { type: "tidyAndConvert" } }, "*");
   };
 
   const requestFullCode = (purpose: "copy" | "display") => {
@@ -297,6 +317,7 @@ export default function App() {
       <PluginUI
         isLoading={state.isLoading}
         isZipExporting={state.isZipExporting}
+        isTidying={state.isTidying}
         code={state.displayedCode}
         lineCount={state.lineCount}
         showingFullCode={state.showingFullCode}
@@ -308,6 +329,7 @@ export default function App() {
         statusMessage={state.statusMessage}
         progressPercent={state.progressPercent}
         onDownloadZip={handleDownloadZip}
+        onTidyAndConvert={handleTidyAndConvert}
         onCopyFullCode={() => requestFullCode("copy")}
         onShowFullCode={() => requestFullCode("display")}
       />

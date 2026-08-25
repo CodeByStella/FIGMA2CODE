@@ -74,6 +74,7 @@ export type ZipErrorMessage = Message & {
   error: string;
 };
 export type ExportZipMessage = Message & { type: "exportZip" };
+export type TidyAndConvertMessage = Message & { type: "tidyAndConvert" };
 export type RequestFullCodeMessage = Message & {
   type: "requestFullCode";
   purpose: "copy" | "display";

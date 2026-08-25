@@ -169,7 +169,7 @@ const EmptyState = () => {
       <h3 className="text-[15px] font-medium text-neutral-800 dark:text-neutral-200">
         Nothing selected
       </h3>
-      <p className="mt-2 max-w-[280px] text-sm leading-5 text-neutral-600 dark:text-neutral-400">
+      <p className="mt-2 max-w-70 text-sm leading-5 text-neutral-600 dark:text-neutral-400">
         Select a frame to generate code. Use Download ZIP for index.html +
         assets.
       </p>

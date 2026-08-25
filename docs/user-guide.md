@@ -26,12 +26,23 @@ You edit source  →  build/watch writes dist/*
                       ↓
 Figma Desktop imports manifest.json  →  loads dist/code.js + dist/index.html
                       ↓
-User selects layers  →  code.js exports ZIP assets + converts
+User selects layers  →  code.js converts (or Tidy + Convert first)
                       ↓
-postMessage  →  UI shows code + Download ZIP (no HTML preview)
+postMessage  →  UI shows code + Tidy + Convert / Download ZIP
 ```
 
 Figma never “requests” a server. Conversion code in `src/` is compiled into the plugin binary.
+
+### Tidy + Convert (panel button)
+
+1. Select a frame/group/section (or leave selection empty to tidy the **current page**).
+2. Click **Tidy + Convert**.
+3. The plugin clones the target to the right of the original as `{name} / tidied`, infers Auto Layout on freeform structure, then converts that clone.
+4. Clicking again for the same source **replaces** the previous tidy clone.
+5. Already Auto Layout frames are left as-is; instances stay linked (no detach).
+6. Later (Phase 2) the visible clone can become invisible / JSON-only so conversion looks direct.
+
+Details: [Logic — Tidy + Convert](./logic.md#tidy--convert-phase-1).
 
 ---
 
@@ -169,6 +180,7 @@ UI-only tweaks sometimes pick up after re-opening the plugin; main-thread (`src/
 | If you change…                       | Folder                        | Then in Figma…                      |
 | ------------------------------------ | ----------------------------- | ----------------------------------- |
 | Conversion logic                     | `src/convert/`, `src/export/` | Wait for watch → **re-run plugin**  |
+| Tidy / Auto Layout inference         | `src/tidy/`                   | Wait for watch → **re-run plugin**  |
 | Plugin UI                            | `src/ui/`                     | Wait for watch → **re-open plugin** |
 | Settings / selection / codegen entry | `src/plugin.ts`               | Wait for watch → **re-run plugin**  |
 
@@ -201,6 +213,7 @@ FigmaToCode/
 │   ├── ui/                    # Plugin panel
 │   ├── convert/               # Nodes + HTML + CSS
 │   ├── export/                # ZIP assets
+│   ├── tidy/                  # Tidy + Convert (visible Auto Layout clone)
 │   └── types/                 # Settings, messages, node types
 └── docs/
     ├── logic.md
@@ -215,8 +228,9 @@ FigmaToCode/
 | `convert/run.ts` | Preview HTML on selection; stream ZIP on download  |
 | `convert/`       | Nodes, layout, HTML + CSS emitter                  |
 | `export/`        | ZIP assets, cache, flags                           |
+| `tidy/`          | Clone + infer Auto Layout before convert           |
 | `types/`         | Settings, messages, plugin vs REST node types      |
-| `ui/`            | Panel: code, ZIP download, colors                  |
+| `ui/`            | Panel: code, Tidy + Convert, ZIP, colors           |
 | `messaging.ts`   | `figma.ui.postMessage` helpers                     |
 
 ---
@@ -234,3 +248,6 @@ A: Removed. The panel shows generated code and **Download ZIP** so large frames 
 
 **Q: Does every run create a ZIP?**  
 A: No. Selection changes generate HTML + CSS only (a short snippet in the panel). **Download ZIP** exports assets and streams files to the browser. Dev Mode **codegen** generates code only (no ZIP).
+
+**Q: What does Tidy + Convert do?**  
+A: It clones the selection (or page) beside the original, infers Auto Layout on freeform layers, then converts that clone. Re-run replaces the previous clone. Already Auto Layout frames and linked instances are left alone.

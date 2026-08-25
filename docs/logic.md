@@ -31,6 +31,7 @@ flowchart TB
 | `src/plugin.ts` | Entry: settings, selection listeners, codegen mode, calls `run()` |
 | `src/convert/`  | Node processing + HTML + CSS emitter                              |
 | `src/export/`   | Asset ZIP                                                         |
+| `src/tidy/`     | Phase 1: clone + infer Auto Layout before convert                 |
 | `src/ui/`       | Panel: code, ZIP download, colors                                 |
 | `src/types/`    | Shared `PluginSettings`, messages, and node types                 |
 
@@ -47,7 +48,7 @@ flowchart LR
 
   Default --> Standard["standardMode()"]
   Standard --> ShowUI["showUI + init settings"]
-  Standard --> Listen["selectionchange / documentchange"]
+  Standard --> Listen["selectionchange"]
   Standard --> SafeRun["safeRun(settings)"]
 
   Codegen --> CG["codegenMode()"]
@@ -105,7 +106,50 @@ Accuracy rules (ported for fidelity):
 
 UI: **Download ZIP** streams one file per `zipFile` message; `src/ui/zip.ts` builds the archive on `zipDone` and clears the buffers.
 
-`safeRun` serializes runs (`isBusy`). Selection and document changes are debounced (~400ms) so visibility/clip restores after export do not immediately re-convert.
+`safeRun` serializes runs (`isBusy`). Selection changes are debounced (~400ms). `documentchange` is not registered because `documentAccess: "dynamic-page"` would require `figma.loadAllPagesAsync()` first.
+
+---
+
+## Tidy + Convert (Phase 1)
+
+Button-only path (`tidyAndConvert`). Does **not** run on every `selectionchange`.
+
+```mermaid
+flowchart TD
+  UI["UI: Tidy + Convert"] --> Msg["plugin.ts: tidyAndConvert"]
+  Msg --> Guard["isBusy + isTidying"]
+  Guard --> Target["resolve selection or page"]
+  Target --> Clone["clone to the right of original"]
+  Clone --> Plan["buildTidyPlan"]
+  Plan --> Apply["applyTidyPlan on clone"]
+  Apply --> Sel["select clone"]
+  Sel --> Run["run() existing converter"]
+```
+
+### Behavior
+
+1. Resolves target: current selection, or (if empty) all visible top-level layers on the current page.
+2. Clones onto the current page, placed to the right of the original bbox (`gap = 80`). Name: `{original} / tidied`.
+3. Plugin data links source ↔ clone (`tidySourceId` / `tidyCloneId`). Re-running replaces the previous clone.
+4. Infers Auto Layout on **freeform** frames/groups in the clone only; original is untouched.
+5. Selects the clone and runs the normal HTML converter.
+
+### Skip rules
+
+| Case                                        | Behavior                                                                 |
+| ------------------------------------------- | ------------------------------------------------------------------------ |
+| Already Auto Layout (`layoutMode !== NONE`) | Do not change that frame’s layout props; still tidy freeform descendants |
+| `INSTANCE`                                  | Keep linked; treat as leaf (no detach, no inner tidy)                    |
+| `COMPONENT` main                            | Build a FRAME copy of children (do not mutate the main)                  |
+| `GROUP`                                     | Convert to FRAME (or unwrap single-child empty groups), then infer       |
+| Rotated / overlapping decorative / overlays | Prefer `layoutPositioning = ABSOLUTE` over a wrong flex stack            |
+| Codegen mode                                | No tidy                                                                  |
+
+Inference lives in `src/tidy/infer.ts` (plan only); Figma writes live in `src/tidy/apply.ts` and `src/tidy/clone.ts`.
+
+### Phase 2 (not implemented)
+
+Keep `TidyPlan` / infer. Stop showing a canvas sibling — either hide/remove the clone after `nodesToJSON`, or apply the plan onto the REST JSON tree with no canvas write so poor design → structured HTML looks direct.
 
 ---
 
@@ -185,7 +229,7 @@ sequenceDiagram
   Backend->>UI: conversionStart
   Backend->>UI: codePreview snippet | empty | error
 
-  Note over Main: selectionchange / documentchange debounce
+  Note over Main: selectionchange debounce
   Main->>Backend: safeRun(settings)
 
   UI->>Main: exportZip
@@ -201,11 +245,12 @@ sequenceDiagram
 | UI → Main | `ui-ready`                | Handshake; init once                                |
 | UI → Main | `pluginSettingWillChange` | Preference update                                   |
 | UI → Main | `exportZip`               | Start streamed ZIP export                           |
+| UI → Main | `tidyAndConvert`          | Clone + Auto Layout tidy, then convert the clone    |
 | UI → Main | `requestFullCode`         | Copy or expand the full HTML document               |
 | UI → Main | `get-selection-json`      | Debug dump of REST + conversion                     |
 | Main → UI | `pluginSettingsChanged`   | Full settings push                                  |
 | Main → UI | `conversionStart`         | Loading / status reset                              |
-| Main → UI | `progress`                | Status text during ZIP export                       |
+| Main → UI | `progress`                | Status text (tidy or ZIP export)                    |
 | Main → UI | `code`                    | HTML snippet + counts (full document stays in main) |
 | Main → UI | `zipFile` / `zipDone`     | One ZIP file, then assemble + download              |
 | Main → UI | `fullCode`                | One-shot full HTML for copy or Show more            |
@@ -284,6 +329,7 @@ Warnings are accumulated in a module-level set (`src/convert/warnings.ts`) and r
 | ---------------------- | -------------------------------------------- |
 | Plugin entry & modes   | `src/plugin.ts`                              |
 | Orchestration `run`    | `src/convert/run.ts`                         |
+| Tidy + Auto Layout     | `src/tidy/`                                  |
 | ZIP + asset export     | `src/export/zip.ts`                          |
 | Asset cache / flags    | `src/export/cache.ts`, `src/export/flags.ts` |
 | JSON → processed nodes | `src/convert/nodes/toJson.ts`                |
@@ -291,6 +337,6 @@ Warnings are accumulated in a module-level set (`src/convert/warnings.ts`) and r
 | HTML codegen           | `src/convert/html/generate.ts`               |
 | Locked export settings | `src/convert/settings.ts`                    |
 | Plugin → UI messages   | `src/messaging.ts`                           |
-| Panel + ZIP button     | `src/ui/PluginUI.tsx`                        |
+| Panel + ZIP / Tidy     | `src/ui/PluginUI.tsx`                        |
 | ZIP download helper    | `src/ui/zip.ts`                              |
 | Types                  | `src/types/`                                 |

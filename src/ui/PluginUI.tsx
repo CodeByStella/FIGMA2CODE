@@ -33,9 +33,11 @@ type PluginUIProps = {
   gradients: LinearGradientConversion[];
   isLoading: boolean;
   isZipExporting?: boolean;
+  isTidying?: boolean;
   statusMessage?: string;
   progressPercent?: number | null;
   onDownloadZip?: () => void;
+  onTidyAndConvert?: () => void;
   onCopyFullCode?: () => void;
   onShowFullCode?: () => void;
 };
@@ -47,17 +49,21 @@ const ZipToolbar = ({
   progressPercent,
   isLoading,
   isZipExporting,
+  isTidying,
   canDownloadZip,
   onDownloadZip,
+  onTidyAndConvert,
 }: {
   statusMessage?: string;
   progressPercent?: number | null;
   isLoading: boolean;
   isZipExporting: boolean;
+  isTidying: boolean;
   canDownloadZip: boolean;
   onDownloadZip?: () => void;
+  onTidyAndConvert?: () => void;
 }) => {
-  const busy = isLoading || isZipExporting;
+  const busy = isLoading || isZipExporting || isTidying;
   const hasPercent =
     typeof progressPercent === "number" &&
     progressPercent >= 0 &&
@@ -70,16 +76,27 @@ const ZipToolbar = ({
           {statusMessage ||
             (canDownloadZip
               ? "Download ZIP for index.html + assets"
-              : "Select a frame to generate code")}
+              : "Select a frame, or Tidy + Convert for the page")}
         </p>
-        <Button
-          size="sm"
-          className="h-8 shrink-0"
-          disabled={!canDownloadZip || busy || !onDownloadZip}
-          onClick={() => onDownloadZip?.()}
-        >
-          {isZipExporting ? "Exporting…" : "Download ZIP"}
-        </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={busy || !onTidyAndConvert}
+            onClick={() => onTidyAndConvert?.()}
+          >
+            {isTidying ? "Tidying…" : "Tidy + Convert"}
+          </Button>
+          <Button
+            size="sm"
+            className="h-8"
+            disabled={!canDownloadZip || busy || !onDownloadZip}
+            onClick={() => onDownloadZip?.()}
+          >
+            {isZipExporting ? "Exporting…" : "Download ZIP"}
+          </Button>
+        </div>
       </div>
       {isZipExporting && (
         <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
@@ -176,8 +193,10 @@ export const PluginUI = (props: PluginUIProps) => {
                 progressPercent={props.progressPercent}
                 isLoading={props.isLoading}
                 isZipExporting={Boolean(props.isZipExporting)}
+                isTidying={Boolean(props.isTidying)}
                 canDownloadZip={canDownloadZip}
                 onDownloadZip={props.onDownloadZip}
+                onTidyAndConvert={props.onTidyAndConvert}
               />
 
               {showBodyLoading ? (
