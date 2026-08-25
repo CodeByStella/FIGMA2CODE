@@ -2,6 +2,7 @@ import { run, exportZipPackage, getLastPreviewHtml } from "./convert/run";
 import { htmlMain, htmlCodeGenTextStyles } from "./convert/html/generate";
 import { nodesToJSON } from "./convert/nodes/toJson";
 import { postSettingsChanged } from "./messaging";
+import { isTidying, tidySelection } from "./tidy";
 import {
   PluginSettings,
   RequestFullCodeMessage,
@@ -66,7 +67,7 @@ const initSettings = async () => {
   safeRun(userPluginSettings);
 };
 
-// Used to prevent overlapping preview / ZIP work (also blocks documentchange loops).
+// Used to prevent overlapping preview / ZIP work (also blocks selectionchange loops).
 let isBusy = false;
 let pendingRun = false;
 
@@ -84,7 +85,7 @@ const safeRun = async (settings: PluginSettings) => {
     "selectionCount =",
     figma.currentPage.selection.length,
   );
-  if (isBusy) {
+  if (isBusy || isTidying()) {
     pendingRun = true;
     console.log("[DEBUG] safeRun - Busy; will rerun after current job");
     return;
@@ -134,7 +135,7 @@ const safeRun = async (settings: PluginSettings) => {
 };
 
 const safeExportZip = async (settings: PluginSettings) => {
-  if (isBusy) {
+  if (isBusy || isTidying()) {
     figma.ui.postMessage({
       type: "zipError",
       error: "Busy generating code — try Download ZIP again in a moment",
@@ -151,6 +152,36 @@ const safeExportZip = async (settings: PluginSettings) => {
         : String(e || "ZIP export failed");
     console.error("[safeExportZip]", e);
     figma.ui.postMessage({ type: "zipError", error: errorMessage });
+  } finally {
+    setTimeout(finishBusy, 100);
+  }
+};
+
+const safeTidyAndConvert = async (settings: PluginSettings) => {
+  if (isBusy || isTidying()) {
+    figma.ui.postMessage({
+      type: "error",
+      error: "Busy — wait for the current job to finish before tidying",
+    });
+    return;
+  }
+  try {
+    isBusy = true;
+    const root = await tidySelection();
+    if (!root) {
+      return;
+    }
+    // Avoid a second convert from selection/document listeners fired by the clone.
+    pendingRun = false;
+    await run(settings);
+  } catch (e) {
+    const errorMessage =
+      e && typeof e === "object" && "message" in e
+        ? String((e as Error).message)
+        : String(e || "Tidy + Convert failed");
+    console.error("[safeTidyAndConvert]", e);
+    figma.ui.postMessage({ type: "error", error: errorMessage });
+    figma.ui.postMessage({ type: "conversion-complete", success: false });
   } finally {
     setTimeout(finishBusy, 100);
   }
@@ -206,7 +237,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const scheduleRun = () => {
   if (!userPluginSettings) return;
-  if (isBusy) {
+  if (isBusy || isTidying()) {
     pendingRun = true;
     return;
   }
@@ -250,6 +281,8 @@ const standardMode = async () => {
       scheduleRun();
     } else if (msg.type === "exportZip") {
       await safeExportZip(userPluginSettings);
+    } else if (msg.type === "tidyAndConvert") {
+      await safeTidyAndConvert(userPluginSettings);
     } else if (msg.type === "requestFullCode") {
       const req = msg as RequestFullCodeMessage;
       postFullCode(req.purpose === "display" ? "display" : "copy");
@@ -274,9 +307,9 @@ const standardMode = async () => {
     scheduleRun();
   });
 
-  figma.on("documentchange", () => {
-    scheduleRun();
-  });
+  // Do not register `documentchange` with documentAccess: "dynamic-page".
+  // It requires figma.loadAllPagesAsync() first, which we avoid for memory.
+  // Selection changes (and Tidy + Convert / settings) are enough to refresh.
 
   // Do not wait for ui-ready — the iframe can post it before onmessage is bound.
   void initializeOnce();
