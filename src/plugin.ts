@@ -68,6 +68,15 @@ const initSettings = async () => {
 
 // Used to prevent overlapping preview / ZIP work (also blocks documentchange loops).
 let isBusy = false;
+let pendingRun = false;
+
+const finishBusy = () => {
+  isBusy = false;
+  if (!pendingRun || !userPluginSettings) return;
+  pendingRun = false;
+  void safeRun(userPluginSettings);
+};
+
 const safeRun = async (settings: PluginSettings) => {
   console.log(
     "[DEBUG] safeRun - Called with isBusy =",
@@ -76,27 +85,31 @@ const safeRun = async (settings: PluginSettings) => {
     figma.currentPage.selection.length,
   );
   if (isBusy) {
-    console.log("[DEBUG] safeRun - Skipping because isBusy");
+    pendingRun = true;
+    console.log("[DEBUG] safeRun - Busy; will rerun after current job");
     return;
   }
+  let timedOut = false;
   try {
     isBusy = true;
     console.log("[DEBUG] safeRun - Starting run execution");
     const watchdog = setTimeout(() => {
-      if (!isBusy) return;
+      if (!isBusy || timedOut) return;
+      timedOut = true;
       console.error("[DEBUG] safeRun - watchdog: conversion still running");
-      isBusy = false;
       figma.ui.postMessage({
         type: "error",
         error:
           "Code generation timed out. A layer may have failed to export (empty or invisible vector).",
       });
+      finishBusy();
     }, 60000);
     try {
       await run(settings);
     } finally {
       clearTimeout(watchdog);
     }
+    if (timedOut) return;
     console.log("[DEBUG] safeRun - Run execution completed");
   } catch (e) {
     console.log("[DEBUG] safeRun - Error caught in execution");
@@ -114,9 +127,9 @@ const safeRun = async (settings: PluginSettings) => {
     }
     figma.ui.postMessage({ type: "conversion-complete", success: false });
   } finally {
-    setTimeout(() => {
-      isBusy = false;
-    }, 100);
+    if (!timedOut) {
+      setTimeout(finishBusy, 100);
+    }
   }
 };
 
@@ -139,9 +152,7 @@ const safeExportZip = async (settings: PluginSettings) => {
     console.error("[safeExportZip]", e);
     figma.ui.postMessage({ type: "zipError", error: errorMessage });
   } finally {
-    setTimeout(() => {
-      isBusy = false;
-    }, 100);
+    setTimeout(finishBusy, 100);
   }
 };
 
@@ -194,6 +205,11 @@ const DEBOUNCE_MS = 400;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const scheduleRun = () => {
+  if (!userPluginSettings) return;
+  if (isBusy) {
+    pendingRun = true;
+    return;
+  }
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
@@ -215,7 +231,6 @@ const postFullCode = (purpose: "copy" | "display") => {
 
 const standardMode = async () => {
   console.log("[DEBUG] standardMode - Starting standard mode initialization");
-  figma.showUI(__html__, { width: 450, height: 700, themeColors: true });
   let initialized = false;
   const initializeOnce = async () => {
     if (initialized) {
@@ -224,14 +239,6 @@ const standardMode = async () => {
     initialized = true;
     await initSettings();
   };
-
-  figma.on("selectionchange", () => {
-    scheduleRun();
-  });
-
-  figma.on("documentchange", () => {
-    scheduleRun();
-  });
 
   figma.ui.onmessage = async (msg) => {
     if (msg.type === "ui-ready") {
@@ -260,6 +267,19 @@ const standardMode = async () => {
       });
     }
   };
+
+  figma.showUI(__html__, { width: 450, height: 700, themeColors: true });
+
+  figma.on("selectionchange", () => {
+    scheduleRun();
+  });
+
+  figma.on("documentchange", () => {
+    scheduleRun();
+  });
+
+  // Do not wait for ui-ready — the iframe can post it before onmessage is bound.
+  void initializeOnce();
 };
 
 const codegenMode = async () => {

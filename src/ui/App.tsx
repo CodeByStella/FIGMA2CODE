@@ -55,13 +55,13 @@ export default function App() {
     codeBytes: 0,
     displayedCode: "",
     showingFullCode: false,
-    isLoading: true,
+    isLoading: false,
     isZipExporting: false,
     settings: null,
     colors: [],
     gradients: [],
     warnings: [],
-    statusMessage: "",
+    statusMessage: "Select a frame to generate code",
     progressPercent: null,
   });
 
