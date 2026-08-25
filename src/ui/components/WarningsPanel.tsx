@@ -112,7 +112,7 @@ const WarningsPanel: React.FC<WarningsPanelProps> = ({ warnings }) => {
             </div>
           )}
 
-          <div className="space-y-1.5 max-h-[200px] overflow-y-auto pb-0.5">
+          <div className="space-y-1.5 max-h-50 overflow-y-auto pb-0.5">
             {displayedWarnings.map((message, index) => {
               const isCritical = critical.includes(message);
               return (

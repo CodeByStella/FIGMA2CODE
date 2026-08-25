@@ -15,7 +15,7 @@ export function buildVisionSystemPrompt(): string {
     "Return ONLY valid JSON (no markdown) describing vertical section split lines and semantic names.",
     "Coordinates MUST use the same root-local Y axis as the inventory (not raw screenshot pixels).",
     "splitLinesY are horizontal cuts between major page sections, sorted ascending.",
-    "sections cover [0, rootHeight] without gaps when possible.",
+    "sections MUST be contiguous: cover [0, rootHeight] with no gaps and no overlaps — each section's yEnd MUST equal the next section's yStart.",
     "renames map layer id → short semantic name (English); only rename clearly labeled UI.",
     "Do not invent CSS or Auto Layout props.",
   ].join(" ");

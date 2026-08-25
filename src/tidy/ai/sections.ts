@@ -20,6 +20,136 @@ function uniqueSorted(nums: number[]): number[] {
   );
 }
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Force section bands to abut: band[i].yEnd === band[i+1].yStart, covering [0, rootHeight].
+ * AI often returns slight gaps/overlaps; those become visible holes between section frames.
+ */
+function normalizeContiguousBands(
+  bands: Array<{ name: string; yStart: number; yEnd: number }>,
+  rootHeight: number,
+): Array<{ name: string; yStart: number; yEnd: number }> {
+  if (bands.length === 0) return [];
+  if (rootHeight <= 0) return bands;
+
+  const sorted = [...bands].sort(
+    (a, b) => a.yStart - b.yStart || a.yEnd - b.yEnd,
+  );
+  const n = sorted.length;
+  if (n === 1) {
+    return [{ name: sorted[0].name, yStart: 0, yEnd: rootHeight }];
+  }
+
+  // Cuts between consecutive sections: midpoint of proposed shared edge / gap / overlap.
+  const cuts: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const cut = (sorted[i].yEnd + sorted[i + 1].yStart) / 2;
+    cuts.push(cut);
+  }
+
+  const edges: number[] = [0];
+  for (let i = 0; i < cuts.length; i++) {
+    const remainingCuts = cuts.length - i;
+    const minEdge = edges[edges.length - 1] + 1;
+    const maxEdge = rootHeight - remainingCuts;
+    edges.push(clamp(cuts[i], minEdge, Math.max(minEdge, maxEdge)));
+  }
+  edges.push(rootHeight);
+
+  // Ensure strictly increasing (degenerate AI ranges).
+  for (let i = 1; i < edges.length; i++) {
+    if (edges[i] <= edges[i - 1]) {
+      edges[i] = Math.min(rootHeight, edges[i - 1] + 1);
+    }
+  }
+  edges[edges.length - 1] = rootHeight;
+
+  return sorted.map((s, i) => ({
+    name: s.name,
+    yStart: Math.round(edges[i] * 100) / 100,
+    yEnd: Math.round(edges[i + 1] * 100) / 100,
+  }));
+}
+
+function buildBands(
+  splitLinesY: number[],
+  sections: AiVisionResult["sections"],
+  rootHeight: number,
+): Array<{ name: string; yStart: number; yEnd: number }> {
+  if (sections.length > 0) {
+    const raw = sections
+      .map((s) => ({
+        name: s.name || "Section",
+        yStart: Math.max(0, s.yStart),
+        yEnd: Math.min(rootHeight, Math.max(s.yStart + 1, s.yEnd)),
+      }))
+      .sort((a, b) => a.yStart - b.yStart);
+    return normalizeContiguousBands(raw, rootHeight);
+  }
+
+  const cuts = uniqueSorted(
+    splitLinesY.filter((y) => y > 1 && y < rootHeight - 1),
+  );
+  const edges = [0, ...cuts, rootHeight];
+  const bands: Array<{ name: string; yStart: number; yEnd: number }> = [];
+  for (let i = 0; i < edges.length - 1; i++) {
+    bands.push({
+      name: `Section ${i + 1}`,
+      yStart: edges[i],
+      yEnd: edges[i + 1],
+    });
+  }
+  return normalizeContiguousBands(bands, rootHeight);
+}
+
+type BandMembers = {
+  name: string;
+  yStart: number;
+  yEnd: number;
+  members: SceneNode[];
+};
+
+/**
+ * Drop empty bands but keep a continuous Y cover by absorbing their range into neighbors.
+ */
+function collapseEmptyBands(
+  bands: Array<{ name: string; yStart: number; yEnd: number }>,
+  assignments: Map<number, SceneNode[]>,
+): BandMembers[] {
+  const raw: BandMembers[] = bands.map((b, i) => ({
+    ...b,
+    members: assignments.get(i) || [],
+  }));
+
+  const out: BandMembers[] = [];
+  for (const band of raw) {
+    if (band.members.length === 0) {
+      if (out.length > 0) {
+        out[out.length - 1].yEnd = band.yEnd;
+      } else {
+        out.push({ ...band, members: [] });
+      }
+      continue;
+    }
+    if (out.length > 0 && out[out.length - 1].members.length === 0) {
+      const leading = out.pop()!;
+      out.push({
+        name: band.name,
+        yStart: leading.yStart,
+        yEnd: band.yEnd,
+        members: band.members,
+      });
+    } else {
+      out.push({ ...band });
+    }
+  }
+
+  return out.filter((b) => b.members.length > 0);
+}
+
 /**
  * Vision models sometimes return Y in screenshot pixels — rescale into root layout coords
  * when values clearly exceed the frame height.
@@ -59,36 +189,6 @@ export function maybeScaleAiCoords(
     };
   }
   return { result, scale: null };
-}
-
-function buildBands(
-  splitLinesY: number[],
-  sections: AiVisionResult["sections"],
-  rootHeight: number,
-): Array<{ name: string; yStart: number; yEnd: number }> {
-  if (sections.length > 0) {
-    return sections
-      .map((s) => ({
-        name: s.name || "Section",
-        yStart: Math.max(0, s.yStart),
-        yEnd: Math.min(rootHeight, Math.max(s.yStart + 1, s.yEnd)),
-      }))
-      .sort((a, b) => a.yStart - b.yStart);
-  }
-
-  const cuts = uniqueSorted(
-    splitLinesY.filter((y) => y > 1 && y < rootHeight - 1),
-  );
-  const edges = [0, ...cuts, rootHeight];
-  const bands: Array<{ name: string; yStart: number; yEnd: number }> = [];
-  for (let i = 0; i < edges.length - 1; i++) {
-    bands.push({
-      name: `Section ${i + 1}`,
-      yStart: edges[i],
-      yEnd: edges[i + 1],
-    });
-  }
-  return bands;
 }
 
 function childCenterY(child: SceneNode, root: SceneNode): number {
@@ -188,18 +288,24 @@ export async function applyAiSections(
   const rootAbs = frame.absoluteBoundingBox;
   let assignedCount = 0;
 
-  for (let i = 0; i < bands.length; i++) {
-    const band = bands[i];
-    const members = assignments.get(i) || [];
-    if (members.length === 0) {
-      aiLog("section empty (skipped)", {
-        name: band.name,
-        yStart: band.yStart,
-        yEnd: band.yEnd,
-      });
-      continue;
-    }
+  const filledBands = collapseEmptyBands(bands, assignments);
+  aiLog("section bands (contiguous)", {
+    before: bands.map((b) => ({
+      name: b.name,
+      yStart: b.yStart,
+      yEnd: b.yEnd,
+      h: b.yEnd - b.yStart,
+    })),
+    after: filledBands.map((b) => ({
+      name: b.name,
+      yStart: b.yStart,
+      yEnd: b.yEnd,
+      h: b.yEnd - b.yStart,
+      count: b.members.length,
+    })),
+  });
 
+  for (const band of filledBands) {
     const section = figma.createFrame();
     section.name = band.name;
     section.fills = [];
@@ -213,7 +319,7 @@ export async function applyAiSections(
     frame.appendChild(section);
 
     const movedNames: string[] = [];
-    for (const child of members) {
+    for (const child of band.members) {
       const childAbs =
         "absoluteBoundingBox" in child ? child.absoluteBoundingBox : null;
       const lx =
@@ -228,8 +334,6 @@ export async function applyAiSections(
           : "y" in child
             ? (child as LayoutMixin).y - band.yStart
             : 0;
-      const w = "width" in child ? (child as LayoutMixin).width : 1;
-      const h = "height" in child ? (child as LayoutMixin).height : 1;
 
       section.appendChild(child);
       if ("x" in child) {
@@ -238,14 +342,13 @@ export async function applyAiSections(
       }
       movedNames.push(child.name);
       assignedCount += 1;
-      void w;
-      void h;
     }
 
     aiLog("section assign", {
       name: band.name,
       range: [band.yStart, band.yEnd],
-      count: members.length,
+      height: bandH,
+      count: band.members.length,
       children: movedNames.slice(0, 20),
     });
   }
@@ -261,7 +364,7 @@ export async function applyAiSections(
   const elapsedMs = Date.now() - t0;
 
   aiLog("AI sections applied", {
-    sectionCount: bands.length,
+    sectionCount: filledBands.length,
     assignedCount,
     unassignedCount: unassigned.length,
     ...renameStats,
@@ -270,7 +373,7 @@ export async function applyAiSections(
   });
 
   return {
-    sectionCount: bands.length,
+    sectionCount: filledBands.length,
     assignedCount,
     unassignedCount: unassigned.length,
     ...renameStats,
