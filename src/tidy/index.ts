@@ -12,7 +12,7 @@ import { buildLayerInventory } from "./ai/inventory";
 import { getOpenRouterApiKey } from "./ai/key";
 import { callOpenRouterVision, OpenRouterHttpError } from "./ai/openrouter";
 import { captureRootScreenshot } from "./ai/screenshot";
-import { applyAiSections } from "./ai/sections";
+import { applyAiSections, ensurePageVerticalFlow } from "./ai/sections";
 
 let tidying = false;
 
@@ -115,6 +115,11 @@ export async function tidySelection(): Promise<SceneNode | null> {
 
       const plan = buildTidyPlan(root);
       await applyTidyPlan(plan, root);
+
+      // Apply can roll back nested frames; re-assert page vertical flow last.
+      if (root.type === "FRAME") {
+        ensurePageVerticalFlow(root as FrameNode);
+      }
     }
 
     try {

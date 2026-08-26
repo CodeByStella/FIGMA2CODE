@@ -2,7 +2,7 @@
 
 import type { AiVisionResult } from "./openrouter";
 import { listRootDirectChildren } from "./inventory";
-import { logError } from "../../shared/log";
+import { logError, safeNodeRef } from "../../shared/log";
 import {
   OVERLAP_AREA_RATIO,
   containsPoint,
@@ -338,6 +338,24 @@ function isSignificantStraddle(rect: Rect, cut: number): boolean {
   return minority >= rect.height * 0.2;
 }
 
+function hasImageFill(node: SceneNode): boolean {
+  if (!("fills" in node)) return false;
+  const fills = (node as MinimalFillsMixin).fills;
+  if (fills === figma.mixed || !Array.isArray(fills)) return false;
+  return fills.some((f) => f && f.visible !== false && f.type === "IMAGE");
+}
+
+/** Wide/tall photo that defines a section — not a small overflow decoration. */
+function isMajorVisual(
+  node: SceneNode,
+  root: SceneNode,
+  rootWidth: number,
+): boolean {
+  const r = childRootRect(node, root);
+  if (!r || !hasImageFill(node)) return false;
+  return r.width >= rootWidth * 0.45 && r.height >= 200;
+}
+
 /** Text, cards, CTAs — moving the split is justified. */
 function isSectionContent(
   node: SceneNode,
@@ -583,18 +601,29 @@ function healBoundaryCompositions(
     for (const cluster of groups) {
       const fromUpper = cluster.filter((m) => upper.members.includes(m));
       const fromLower = cluster.filter((m) => lower.members.includes(m));
-      if (fromUpper.length === 0 || fromLower.length === 0) continue;
-
+      const visuals = cluster.filter((m) => isMajorVisual(m, root, rootWidth));
       const content = clusterContentMembers(
         cluster,
         root,
         rootWidth,
         rootHeight,
       );
+      const visualOverflow = visuals.some((v) => {
+        const r = childRootRect(v, root);
+        return r ? isSignificantStraddle(r, cut) : false;
+      });
 
-      // Decoration / intersection ornament: keep the cut, contain each layer
-      // in the section it occupies more, let clipsContent=false overflow.
-      if (content.length === 0) {
+      if (fromUpper.length === 0 && fromLower.length === 0) continue;
+      if (
+        !visualOverflow &&
+        (fromUpper.length === 0 || fromLower.length === 0) &&
+        content.length === 0
+      ) {
+        continue;
+      }
+
+      // Small boundary ornaments: keep the cut, overflow, contain by majority.
+      if (content.length === 0 && visuals.length === 0) {
         for (const m of cluster) {
           const r = childRootRect(m, root);
           if (!r) continue;
@@ -622,16 +651,16 @@ function healBoundaryCompositions(
         continue;
       }
 
-      const cutGroup = clusterCutMembers(cluster, root, rootWidth, rootHeight);
+      const cutGroup =
+        content.length > 0
+          ? clusterCutMembers(cluster, root, rootWidth, rootHeight)
+          : visuals;
       const top = clusterTop(cutGroup, root);
       if (top == null) continue;
       const ownerIsUpper = top < cut;
 
       const owner = ownerIsUpper ? upper : lower;
       const donor = ownerIsUpper ? lower : upper;
-      const exclusive = donor.members.filter(
-        (m) => !cluster.includes(m) && !isBgNode(m),
-      );
 
       const bleeds = donor.members.filter((m) => {
         if (cluster.includes(m) || !isBgNode(m)) return false;
@@ -642,14 +671,30 @@ function healBoundaryCompositions(
         });
       });
 
+      // Layers sitting in the overflow band belong with the photo, not the next section.
+      const overflowTaken: SceneNode[] = [];
+      if (visuals.length > 0 && ownerIsUpper) {
+        const bottom = clusterBottom(cutGroup, root);
+        if (bottom != null) {
+          for (const m of donor.members) {
+            if (cluster.includes(m) || bleeds.includes(m)) continue;
+            const r = childRootRect(m, root);
+            if (!r) continue;
+            if (r.y + r.height / 2 < bottom) overflowTaken.push(m);
+          }
+        }
+      }
+
       const taken = new Set([
         ...cluster.filter((m) => donor.members.includes(m)),
         ...bleeds,
+        ...overflowTaken,
       ]);
-      if (taken.size === 0) continue;
 
       donor.members = donor.members.filter((m) => !taken.has(m));
-      owner.members = sortMembers([...owner.members, ...taken]);
+      if (taken.size > 0) {
+        owner.members = sortMembers([...owner.members, ...taken]);
+      }
 
       if (ownerIsUpper) {
         const bottom = clusterBottom(cutGroup, root);
@@ -674,7 +719,7 @@ function healBoundaryCompositions(
 
       cut = upper.yEnd;
 
-      if (exclusive.length === 0 && donor.members.length === 0) {
+      if (donor.members.length === 0) {
         if (ownerIsUpper) upper.yEnd = lower.yEnd;
         else lower.yStart = upper.yStart;
         out.splice(ownerIsUpper ? i + 1 : i, 1);
@@ -824,6 +869,83 @@ function snapCutsToBackgrounds(
 }
 
 /**
+ * Page = vertical Auto Layout; section frames are flow children (no page-top Y).
+ * Direct children that are not flow sections stay absolute overlays.
+ */
+export function ensurePageVerticalFlow(
+  page: FrameNode,
+  flowFrames?: FrameNode[],
+): void {
+  const sections =
+    flowFrames && flowFrames.length > 0
+      ? flowFrames.filter((s) => s.parent === page)
+      : ([...page.children].filter((c) => c.type === "FRAME") as FrameNode[]);
+  if (sections.length === 0) return;
+
+  const flowIds = new Set(sections.map((s) => s.id));
+  const pinned = [...page.children]
+    .filter((n) => !flowIds.has(n.id))
+    .map((n) => ({
+      node: n,
+      x: "x" in n ? (n as LayoutMixin).x : 0,
+      y: "y" in n ? (n as LayoutMixin).y : 0,
+    }));
+
+  try {
+    page.layoutMode = "VERTICAL";
+    page.primaryAxisSizingMode = "FIXED";
+    page.counterAxisSizingMode = "FIXED";
+    page.primaryAxisAlignItems = "MIN";
+    page.counterAxisAlignItems = "MIN";
+    page.paddingTop = 0;
+    page.paddingBottom = 0;
+    page.paddingLeft = 0;
+    page.paddingRight = 0;
+    page.itemSpacing = 0;
+    if ("layoutWrap" in page) page.layoutWrap = "NO_WRAP";
+  } catch (e) {
+    logError(`page Auto Layout failed (${safeNodeRef(page)})`, e);
+    return;
+  }
+
+  for (const { node, x, y } of pinned) {
+    try {
+      if ("layoutPositioning" in node) {
+        (node as FrameNode).layoutPositioning = "ABSOLUTE";
+      }
+      if ("x" in node) {
+        (node as LayoutMixin).x = x;
+        (node as LayoutMixin).y = y;
+      }
+    } catch (e) {
+      logError(`page overlay ABSOLUTE failed (${safeNodeRef(node)})`, e);
+    }
+  }
+
+  for (const section of sections) {
+    try {
+      if ("layoutPositioning" in section) {
+        section.layoutPositioning = "AUTO";
+      }
+      section.layoutAlign = "STRETCH";
+      section.layoutGrow = 0;
+      section.layoutSizingHorizontal = "FILL";
+      section.layoutSizingVertical = "FIXED";
+    } catch (e) {
+      logError(`section flow sizing failed (${safeNodeRef(section)})`, e);
+    }
+  }
+}
+
+function flowPageAsVerticalSections(
+  page: FrameNode,
+  sections: FrameNode[],
+  _unassigned: SceneNode[],
+): void {
+  ensurePageVerticalFlow(page, sections);
+}
+
+/**
  * Wrap direct children into named section frames by vertical band; renames use
  * getNodeByIdAsync for dynamic-page document access.
  */
@@ -894,7 +1016,6 @@ export async function applyAiSections(
     assignments.get(idx)!.push(child);
   }
 
-  // Section frames are appended now; infer/apply will establish vertical Auto Layout order.
   let assignedCount = 0;
 
   let filledBands = splitBandsAtSectionBackgrounds(
@@ -917,6 +1038,8 @@ export async function applyAiSections(
     childOrder,
   );
 
+  const sectionNodes: FrameNode[] = [];
+
   for (const band of filledBands) {
     const section = figma.createFrame();
     section.name = band.name;
@@ -925,10 +1048,11 @@ export async function applyAiSections(
     const bandH = Math.max(1, band.yEnd - band.yStart);
     section.resizeWithoutConstraints(Math.max(1, frame.width), bandH);
     section.x = 0;
+    // Temporary page-space Y so children convert to section-local; page AL then stacks.
     section.y = band.yStart;
 
-    // Append now; vertical Auto Layout in infer/apply will stack sections by Y.
     frame.appendChild(section);
+    sectionNodes.push(section);
 
     for (const child of band.members) {
       // Keep transform-local x/y (not AABB). AABB left ≠ node.x when rotated.
@@ -943,6 +1067,8 @@ export async function applyAiSections(
       assignedCount += 1;
     }
   }
+
+  flowPageAsVerticalSections(frame, sectionNodes, unassigned);
 
   const renameStats = await applyRenamesAsync(result.renames);
   const elapsedMs = Date.now() - t0;

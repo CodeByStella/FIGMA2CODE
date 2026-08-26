@@ -519,12 +519,16 @@ export async function applyTidyPlan(
     await applyFrameSpec(spec, before);
   }
 
-  // Last-resort rollback on the root if nested frames left residual drift.
-  const finalBad = driftedIds(root, before);
-  if (finalBad.length > 0 && root.type === "FRAME") {
-    tidyWarn(
-      `Final pixel check failed (${finalBad.length} layers) — restoring freeform on root`,
-    );
-    restoreFramePixelPerfect(root as FrameNode, before);
+  // Do not restoreFramePixelPerfect the page when it is already a flow stack —
+  // that sets layoutMode NONE and leaves sections on absolute Y from the page top.
+  const page = root.type === "FRAME" ? (root as FrameNode) : null;
+  if (page && page.layoutMode === "NONE") {
+    const finalBad = driftedIds(root, before);
+    if (finalBad.length > 0) {
+      tidyWarn(
+        `Final pixel check failed (${finalBad.length} layers) — restoring freeform on root`,
+      );
+      restoreFramePixelPerfect(page, before);
+    }
   }
 }
