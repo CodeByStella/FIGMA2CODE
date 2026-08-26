@@ -71,6 +71,26 @@ export function isPlainFillShape(node: SceneNode): boolean {
   return true;
 }
 
+/** Vectors/shapes that stack into a composite icon rather than page chrome. */
+export function isDecorativeLayer(node: SceneNode): boolean {
+  return (
+    node.type === "VECTOR" ||
+    node.type === "BOOLEAN_OPERATION" ||
+    node.type === "STAR" ||
+    node.type === "POLYGON" ||
+    node.type === "LINE" ||
+    node.type === "ELLIPSE" ||
+    node.type === "RECTANGLE"
+  );
+}
+
+function siblingsSitInside(cover: ChildGeom, others: ChildGeom[]): boolean {
+  if (others.length === 0) return false;
+  return others.every((o) =>
+    containsPoint(cover.rect, rectCenterX(o.rect), rectCenterY(o.rect)),
+  );
+}
+
 export function parentHasFills(node: SceneNode): boolean {
   if (!("fills" in node)) return false;
   const fills = (node as MinimalFillsMixin).fills;
@@ -105,10 +125,22 @@ export function classifyChildren(
     .filter((c) => coversParent(c.rect, parentRect, BG_COVER_RATIO))
     .sort((a, b) => a.index - b.index);
 
-  let bg: ChildGeom | null = covers[0] ?? null;
-  // Plain fill shapes can be folded into the parent frame; complex backgrounds stay absolute.
+  // Plain fills can fold into the parent. A covering VECTOR with siblings
+  // nested inside it is a stacked icon (LINE mark), not a page background.
+  let bg: ChildGeom | null = null;
   const plainCover = covers.find((c) => isPlainFillShape(c.node));
-  if (plainCover) bg = plainCover;
+  if (plainCover) {
+    bg = plainCover;
+  } else if (covers[0]) {
+    const cover = covers[0];
+    const others = candidates.filter((c) => c !== cover);
+    const stackedIcon =
+      others.length > 0 &&
+      isDecorativeLayer(cover.node) &&
+      others.every((o) => isDecorativeLayer(o.node)) &&
+      siblingsSitInside(cover, others);
+    if (!stackedIcon) bg = cover;
+  }
 
   const rest = candidates.filter((c) => c !== bg);
   if (bg) backgrounds.push(bg);
@@ -128,13 +160,17 @@ export function classifyChildren(
   }
 
   // Overlapping siblings that are all decorative (badges, icons) cannot share one Auto Layout flow.
-  if (overlapPairs.length >= 3 && rest.length >= 3) {
+  if (rest.length >= 2) {
     const heavilyOverlapped = new Set<ChildGeom>();
     for (const [a, b] of overlapPairs) {
       heavilyOverlapped.add(a);
       heavilyOverlapped.add(b);
     }
-    if (heavilyOverlapped.size >= 3) {
+    if (
+      (overlapPairs.length >= 3 && heavilyOverlapped.size >= 3) ||
+      (heavilyOverlapped.size === rest.length &&
+        overlapPairs.length >= rest.length - 1)
+    ) {
       for (const item of heavilyOverlapped) {
         if (flowSet.has(item)) {
           absolute.push(item);

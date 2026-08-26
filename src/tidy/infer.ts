@@ -4,6 +4,7 @@ import {
   ALIGN_EPS,
   ChildGeom,
   GAP_EPS,
+  OVERLAP_AREA_RATIO,
   Rect,
   bandSplit,
   childGeom,
@@ -11,6 +12,7 @@ import {
   isCleanStack,
   median,
   nearlyEqual,
+  overlapRatioOfMin,
   parentAbsRect,
   parentLocalRect,
   rectBottom,
@@ -25,6 +27,7 @@ import {
   canHaveChildren,
   classifyChildren,
   isAutoLayoutFrame,
+  isDecorativeLayer,
   isLeafType,
   isPlainFillShape,
   parentHasFills,
@@ -697,9 +700,39 @@ function inferFrame(
   for (const item of [...classified.overlays, ...classified.absolute]) {
     absoluteChildren.push({
       nodeId: item.node.id,
-      x: item.layoutX,
-      y: item.layoutY,
+      x: item.rect.x,
+      y: item.rect.y,
     });
+  }
+
+  let flow = classified.flow;
+  const extras = [
+    ...classified.backgrounds,
+    ...classified.overlays,
+    ...classified.absolute,
+  ];
+  // Leftover flow that still overlaps extracted layers is stacked artwork (e.g. LINE icon).
+  if (
+    flow.length > 0 &&
+    extras.length > 0 &&
+    [...flow, ...extras].every((i) => isDecorativeLayer(i.node)) &&
+    flow.every((f) =>
+      extras.some(
+        (e) => overlapRatioOfMin(f.rect, e.rect) >= OVERLAP_AREA_RATIO,
+      ),
+    )
+  ) {
+    for (const item of flow) {
+      absoluteChildren.push({
+        nodeId: item.node.id,
+        x: item.rect.x,
+        y: item.rect.y,
+      });
+    }
+    tidyWarn(
+      `Stacked overlapping layers in "${node.name}" kept absolute (not a flow)`,
+    );
+    flow = [];
   }
 
   let foldBackgroundId: string | undefined;
@@ -712,8 +745,8 @@ function inferFrame(
       stretchBackgroundId = bg.node.id;
       absoluteChildren.push({
         nodeId: bg.node.id,
-        x: bg.layoutX,
-        y: bg.layoutY,
+        x: bg.rect.x,
+        y: bg.rect.y,
       });
       tidyWarn(`Background "${bg.node.name}" kept as absolute stretch`);
     }
@@ -725,12 +758,12 @@ function inferFrame(
     );
   }
 
-  const structure = inferStructure(classified.flow, parentRect);
+  const structure = inferStructure(flow, parentRect);
   for (const item of structure.fallbackAbsolute) {
     absoluteChildren.push({
       nodeId: item.node.id,
-      x: item.layoutX,
-      y: item.layoutY,
+      x: item.rect.x,
+      y: item.rect.y,
     });
   }
 

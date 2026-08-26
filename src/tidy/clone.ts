@@ -2,6 +2,7 @@
 
 import type { ResolvedTarget } from "./target";
 import { Rect, parentAbsRect, unionRect } from "./geometry";
+import { transformOriginOffset } from "./preserve";
 import { PLUGIN_DATA_CLONE, PLUGIN_DATA_SOURCE, TIDY_GAP } from "./types";
 import { tidyWarn } from "./warnings";
 import { logError } from "../shared/log";
@@ -134,8 +135,9 @@ function wrapNodesInFrame(
     const clone = cloneSceneNode(node);
     frame.appendChild(clone);
     if (box) {
-      clone.x = box.x - union.x;
-      clone.y = box.y - union.y;
+      const { dx, dy } = transformOriginOffset(node);
+      clone.x = box.x - union.x + dx;
+      clone.y = box.y - union.y + dy;
     }
   }
 

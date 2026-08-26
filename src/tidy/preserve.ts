@@ -90,8 +90,70 @@ function depthOf(node: BaseNode): number {
 }
 
 /**
+ * node.x/y minus the visual AABB origin in parent space.
+ * Zero when unrotated; for 180° rotation this is typically (+width, +height)
+ * because `x` is the transform translation, not the bounding-box left.
+ */
+export function transformOriginOffset(node: SceneNode): {
+  dx: number;
+  dy: number;
+} {
+  if (!("x" in node)) return { dx: 0, dy: 0 };
+  const box = "absoluteBoundingBox" in node ? node.absoluteBoundingBox : null;
+  if (!box) return { dx: 0, dy: 0 };
+  const parent = node.parent;
+  const parentBox =
+    parent && "absoluteBoundingBox" in parent
+      ? parent.absoluteBoundingBox
+      : null;
+  const originX = parentBox?.x ?? 0;
+  const originY = parentBox?.y ?? 0;
+  const lm = node as LayoutMixin;
+  return {
+    dx: lm.x - (box.x - originX),
+    dy: lm.y - (box.y - originY),
+  };
+}
+
+/**
+ * Write x/y (and optional size) so absoluteBoundingBox lands at the parent-local
+ * box. Assigning AABB left/top to `node.x`/`node.y` shifts rotated layers.
+ */
+export function placeLocalBox(
+  node: SceneNode,
+  localX: number,
+  localY: number,
+  w?: number,
+  h?: number,
+): void {
+  if (!("x" in node)) return;
+  const rotated =
+    "rotation" in node && Math.abs((node as LayoutMixin).rotation) > 0.5;
+  // AABB size is larger than layout size when rotated; resizing to the box grows the node.
+  if (
+    !rotated &&
+    typeof w === "number" &&
+    typeof h === "number" &&
+    "resize" in node
+  ) {
+    try {
+      (node as LayoutMixin).resize(Math.max(1, w), Math.max(1, h));
+    } catch (e) {
+      logError(`resize failed (${safeNodeRef(node)})`, e);
+    }
+  }
+  const { dx, dy } = transformOriginOffset(node);
+  try {
+    (node as LayoutMixin).x = localX + dx;
+    (node as LayoutMixin).y = localY + dy;
+  } catch (e) {
+    logError(`absolute box write failed (${safeNodeRef(node)})`, e);
+  }
+}
+
+/**
  * Position a node so its absoluteBoundingBox matches the snapshot, compensating
- * for the parent's absolute origin.
+ * for rotation (node.x is the transform origin, not the AABB left).
  */
 function restoreNodeAbs(node: SceneNode, target: AbsSnap): void {
   if (!("x" in node)) return;
@@ -109,18 +171,13 @@ function restoreNodeAbs(node: SceneNode, target: AbsSnap): void {
   } catch (e) {
     logError(`layoutPositioning write failed (${safeNodeRef(node)})`, e);
   }
-  (node as LayoutMixin).x = target.x - originX;
-  (node as LayoutMixin).y = target.y - originY;
-  if ("resize" in node && typeof (node as LayoutMixin).resize === "function") {
-    try {
-      (node as LayoutMixin).resize(
-        Math.max(1, target.w),
-        Math.max(1, target.h),
-      );
-    } catch (e) {
-      logError(`resize failed (${safeNodeRef(node)})`, e);
-    }
-  }
+  placeLocalBox(
+    node,
+    target.x - originX,
+    target.y - originY,
+    target.w,
+    target.h,
+  );
 }
 
 /**

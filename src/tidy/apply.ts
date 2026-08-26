@@ -10,10 +10,12 @@ import {
   AbsSnap,
   TIDY_WRAPPER_KEY,
   driftedIds,
+  placeLocalBox,
   restoreFramePixelPerfect,
   snapAbs,
   snapTree,
 } from "./preserve";
+import { isRotatable } from "./classify";
 import { tidyWarn } from "./warnings";
 import { logError, safeNodeRef, isMissingNodeError } from "../shared/log";
 
@@ -78,7 +80,8 @@ function pinFixedSize(node: SceneNode, w: number, h: number): void {
     n.layoutSizingVertical = "FIXED";
     n.layoutGrow = 0;
     n.layoutAlign = "INHERIT";
-    if ("resize" in n) {
+    // AABB size ≠ layout size when rotated — resizing to the box grows the node.
+    if ("resize" in n && !isRotatable(n)) {
       (n as LayoutMixin).resize(Math.max(1, w), Math.max(1, h));
     }
   } catch (e) {
@@ -103,23 +106,13 @@ function applyAbsoluteAt(
   h?: number,
 ): void {
   try {
-    if ("layoutPositioning" in node && parentAllowsAbsolute(node)) {
+    if (parentAllowsAbsolute(node) && "layoutPositioning" in node) {
       (node as FrameNode).layoutPositioning = "ABSOLUTE";
     }
   } catch (e) {
     logError(`layoutPositioning ABSOLUTE failed (${safeNodeRef(node)})`, e);
   }
-  try {
-    if ("x" in node) {
-      (node as LayoutMixin).x = x;
-      (node as LayoutMixin).y = y;
-    }
-    if (typeof w === "number" && typeof h === "number" && "resize" in node) {
-      (node as LayoutMixin).resize(Math.max(1, w), Math.max(1, h));
-    }
-  } catch (e) {
-    logError(`absolute box write failed (${safeNodeRef(node)})`, e);
-  }
+  placeLocalBox(node, x, y, w, h);
 }
 
 function safeRemove(node: BaseNode): void {
@@ -132,6 +125,16 @@ function safeRemove(node: BaseNode): void {
   }
 }
 
+function parentAbsOrigin(node: BaseNode | null): { x: number; y: number } {
+  if (node && "absoluteBoundingBox" in node && node.absoluteBoundingBox) {
+    return {
+      x: node.absoluteBoundingBox.x,
+      y: node.absoluteBoundingBox.y,
+    };
+  }
+  return { x: 0, y: 0 };
+}
+
 function convertGroupToFrame(group: GroupNode): FrameNode {
   const parent = group.parent;
   if (!parent || !("appendChild" in parent)) {
@@ -139,20 +142,27 @@ function convertGroupToFrame(group: GroupNode): FrameNode {
   }
 
   const index = parent.children.indexOf(group);
+  const groupBox = group.absoluteBoundingBox;
   const children = [...group.children].map((child) => ({
     node: child,
-    x: child.x,
-    y: child.y,
+    snap: snapAbs(child),
   }));
 
   const frame = figma.createFrame();
   frame.name = group.name;
   frame.resizeWithoutConstraints(
-    Math.max(1, group.width),
-    Math.max(1, group.height),
+    Math.max(1, groupBox?.width ?? group.width),
+    Math.max(1, groupBox?.height ?? group.height),
   );
-  frame.x = group.x;
-  frame.y = group.y;
+  const origin = parentAbsOrigin(parent);
+  if (groupBox) {
+    // Group x/y can be transform origin; AABB is the visual box we must keep.
+    frame.x = groupBox.x - origin.x;
+    frame.y = groupBox.y - origin.y;
+  } else {
+    frame.x = group.x;
+    frame.y = group.y;
+  }
   frame.fills = [];
   frame.clipsContent = false;
 
@@ -164,12 +174,18 @@ function convertGroupToFrame(group: GroupNode): FrameNode {
 
   parent.insertChild(index >= 0 ? index : parent.children.length, frame);
 
-  for (const { node, x, y } of children) {
+  // appendChild preserves world position (and bakes group rotation into children).
+  // Do not write the pre-reparent x/y — those are not frame-local.
+  for (const { node, snap } of children) {
     if (!node.parent) continue;
     try {
       frame.appendChild(node);
-      node.x = x;
-      node.y = y;
+      if (snap) {
+        const frameAbs = frame.absoluteBoundingBox;
+        if (frameAbs) {
+          placeLocalBox(node, snap.x - frameAbs.x, snap.y - frameAbs.y);
+        }
+      }
     } catch (e) {
       logError(`group→frame reparent failed (${safeNodeRef(node)})`, e);
     }
@@ -185,12 +201,13 @@ function unwrapGroup(group: GroupNode): SceneNode {
     return group;
   }
   const child = group.children[0];
-  const gx = group.x;
-  const gy = group.y;
+  const snap = snapAbs(child);
   const index = parent.children.indexOf(group);
   parent.insertChild(index >= 0 ? index : parent.children.length, child);
-  child.x = gx + child.x;
-  child.y = gy + child.y;
+  if (snap && "x" in child) {
+    const dest = parentAbsOrigin(parent);
+    placeLocalBox(child, snap.x - dest.x, snap.y - dest.y);
+  }
   safeRemove(group);
   return child;
 }
@@ -381,6 +398,21 @@ async function applyFrameSpec(
       frame.resize(Math.max(1, w), Math.max(1, h));
       frame.primaryAxisSizingMode = "FIXED";
       frame.counterAxisSizingMode = "FIXED";
+
+      // Pull overlays/backgrounds out of the flow before padding can stack them.
+      for (const child of [...frame.children]) {
+        if (!absoluteIds.has(child.id)) continue;
+        try {
+          if ("layoutPositioning" in child) {
+            (child as FrameNode).layoutPositioning = "ABSOLUTE";
+          }
+        } catch (e) {
+          logError(
+            `layoutPositioning ABSOLUTE failed (${safeNodeRef(child)})`,
+            e,
+          );
+        }
+      }
 
       // ABSOLUTE is only valid after the parent has Auto Layout.
       pinAbsoluteChildren();

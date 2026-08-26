@@ -49,7 +49,7 @@ export type FrameTidySpec = {
   /** True when this frame already has Auto Layout and must not be re-inferred. */
   skipLayout: boolean;
   layout?: AutoLayoutSpec;
-  /** Overlays, backgrounds, and rotated layers pinned absolute before flow layout runs. */
+  /** Overlays and rotated layers pinned absolute. x/y are parent-local AABB. */
   absoluteChildren: Array<{ nodeId: string; x: number; y: number }>;
   childSizing: ChildSizingSpec[];
   wrappers: WrapperSpec[];

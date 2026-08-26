@@ -277,7 +277,6 @@ export async function applyAiSections(
   }
 
   // Section frames are appended now; infer/apply will establish vertical Auto Layout order.
-  const rootAbs = frame.absoluteBoundingBox;
   let assignedCount = 0;
 
   const filledBands = collapseEmptyBands(bands, assignments);
@@ -296,25 +295,14 @@ export async function applyAiSections(
     frame.appendChild(section);
 
     for (const child of band.members) {
-      const childAbs =
-        "absoluteBoundingBox" in child ? child.absoluteBoundingBox : null;
-      const lx =
-        childAbs && rootAbs
-          ? childAbs.x - rootAbs.x
-          : "x" in child
-            ? (child as LayoutMixin).x
-            : 0;
-      const ly =
-        childAbs && rootAbs
-          ? childAbs.y - rootAbs.y - band.yStart
-          : "y" in child
-            ? (child as LayoutMixin).y - band.yStart
-            : 0;
+      // Keep transform-local x/y (not AABB). AABB left ≠ node.x when rotated.
+      const prevX = "x" in child ? (child as LayoutMixin).x : 0;
+      const prevY = "y" in child ? (child as LayoutMixin).y : 0;
 
       section.appendChild(child);
       if ("x" in child) {
-        (child as LayoutMixin).x = lx;
-        (child as LayoutMixin).y = ly;
+        (child as LayoutMixin).x = prevX - section.x;
+        (child as LayoutMixin).y = prevY - section.y;
       }
       assignedCount += 1;
     }
