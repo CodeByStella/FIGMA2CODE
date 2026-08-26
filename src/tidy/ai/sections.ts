@@ -12,6 +12,10 @@ import {
   rectArea,
   type Rect,
 } from "../geometry";
+import { placeLocalBox } from "../preserve";
+
+/** Near full-bleed page child — already a section shell, not a card. */
+const SECTION_WIDTH_RATIO = 0.8;
 
 export type AppliedAiSectionsStats = {
   sectionCount: number;
@@ -871,16 +875,34 @@ function snapCutsToBackgrounds(
 /**
  * Page = vertical Auto Layout; section frames are flow children (no page-top Y).
  * Direct children that are not flow sections stay absolute overlays.
+ *
+ * Sibling order IS the stack order. Promoted/reused frames keep their old
+ * layer-panel index (often reverse of visual Y); new shells append at end —
+ * so we always reinsert flow frames in the intended top→bottom order before
+ * enabling Auto Layout. Does not change fills, sizes, or nested structure.
  */
 export function ensurePageVerticalFlow(
   page: FrameNode,
   flowFrames?: FrameNode[],
 ): void {
-  const sections =
-    flowFrames && flowFrames.length > 0
-      ? flowFrames.filter((s) => s.parent === page)
-      : ([...page.children].filter((c) => c.type === "FRAME") as FrameNode[]);
+  let sections: FrameNode[];
+  if (flowFrames && flowFrames.length > 0) {
+    sections = flowFrames.filter((s) => s.parent === page);
+  } else {
+    sections = [...page.children].filter(
+      (c) =>
+        c.type === "FRAME" &&
+        !(
+          "layoutPositioning" in c &&
+          (c as FrameNode).layoutPositioning === "ABSOLUTE"
+        ),
+    ) as FrameNode[];
+    // After apply/rollback, prefer page-local Y (band tops) over layer order.
+    sections.sort((a, b) => a.y - b.y || a.x - b.x);
+  }
   if (sections.length === 0) return;
+
+  reorderPageFlowChildren(page, sections);
 
   const flowIds = new Set(sections.map((s) => s.id));
   const pinned = [...page.children]
@@ -924,6 +946,13 @@ export function ensurePageVerticalFlow(
 
   for (const section of sections) {
     try {
+      // Overlapping end blocks (e.g. table vs Join) stay absolute — do not force AUTO.
+      if (
+        "layoutPositioning" in section &&
+        section.layoutPositioning === "ABSOLUTE"
+      ) {
+        continue;
+      }
       if ("layoutPositioning" in section) {
         section.layoutPositioning = "AUTO";
       }
@@ -937,12 +966,131 @@ export function ensurePageVerticalFlow(
   }
 }
 
+/**
+ * Place overlays first (stable relative order), then flow sections in the
+ * given top→bottom order. insertChild only — no resize/style changes.
+ */
+function reorderPageFlowChildren(
+  page: FrameNode,
+  sectionsInOrder: FrameNode[],
+): void {
+  const flowIds = new Set(
+    sectionsInOrder.filter((s) => s.parent === page).map((s) => s.id),
+  );
+  const overlays = [...page.children].filter((n) => !flowIds.has(n.id));
+
+  let at = 0;
+  for (const node of overlays) {
+    try {
+      page.insertChild(at, node);
+      at += 1;
+    } catch (e) {
+      logError(`reorder overlay failed (${safeNodeRef(node)})`, e);
+    }
+  }
+  for (const section of sectionsInOrder) {
+    if (section.parent !== page) continue;
+    try {
+      page.insertChild(at, section);
+      at += 1;
+    } catch (e) {
+      logError(`reorder section failed (${safeNodeRef(section)})`, e);
+    }
+  }
+}
+
 function flowPageAsVerticalSections(
   page: FrameNode,
   sections: FrameNode[],
   _unassigned: SceneNode[],
 ): void {
+  // `sections` is filledBands order (top→bottom by yStart).
   ensurePageVerticalFlow(page, sections);
+}
+
+function isWideSectionShell(node: SceneNode, pageWidth: number): boolean {
+  return "width" in node && node.width >= pageWidth * SECTION_WIDTH_RATIO;
+}
+
+/**
+ * Designer already wrapped the band in one full-width frame — reuse it as the
+ * tidy section instead of nesting Section > OriginalSection > content.
+ */
+function canReuseAsSection(
+  node: SceneNode,
+  pageWidth: number,
+): node is FrameNode {
+  return (
+    node.type === "FRAME" &&
+    node.children.length > 0 &&
+    isWideSectionShell(node, pageWidth)
+  );
+}
+
+/** Keep children on-canvas when moving/resizing a promoted section to the band box. */
+function normalizePromotedSection(
+  section: FrameNode,
+  band: BandMembers,
+  pageWidth: number,
+): void {
+  const bandH = Math.max(1, band.yEnd - band.yStart);
+  const prevX = section.x;
+  const prevY = section.y;
+  try {
+    section.resizeWithoutConstraints(Math.max(1, pageWidth), bandH);
+  } catch (e) {
+    logError(`promote section resize failed (${safeNodeRef(section)})`, e);
+  }
+  section.x = 0;
+  section.y = band.yStart;
+  const dx = prevX - section.x;
+  const dy = prevY - section.y;
+  if (dx !== 0 || dy !== 0) {
+    for (const child of [...section.children] as SceneNode[]) {
+      if (!("x" in child)) continue;
+      try {
+        (child as LayoutMixin).x += dx;
+        (child as LayoutMixin).y += dy;
+      } catch (e) {
+        logError(
+          `promote section child shift failed (${safeNodeRef(child)})`,
+          e,
+        );
+      }
+    }
+  }
+  try {
+    section.clipsContent = false;
+  } catch (e) {
+    logError(`promote section clips failed (${safeNodeRef(section)})`, e);
+  }
+}
+
+/** Move group children into the new section frame and drop the redundant group. */
+function flattenGroupIntoSection(group: GroupNode, section: FrameNode): number {
+  const kids = [...group.children] as SceneNode[];
+  let moved = 0;
+  for (const child of kids) {
+    const snap = child.absoluteBoundingBox;
+    try {
+      section.appendChild(child);
+      if (snap) {
+        const sAbs = section.absoluteBoundingBox;
+        if (sAbs) {
+          placeLocalBox(child, snap.x - sAbs.x, snap.y - sAbs.y);
+        }
+      }
+      moved += 1;
+    } catch (e) {
+      logError(`flatten group child failed (${safeNodeRef(child)})`, e);
+    }
+  }
+  try {
+    if (group.parent) group.remove();
+  } catch (e) {
+    logError(`flatten group remove failed (${safeNodeRef(group)})`, e);
+  }
+  return moved;
 }
 
 /**
@@ -1041,6 +1189,17 @@ export async function applyAiSections(
   const sectionNodes: FrameNode[] = [];
 
   for (const band of filledBands) {
+    const sole = band.members.length === 1 ? band.members[0] : null;
+
+    // Already one full-width section frame → rename/reuse (no extra nest).
+    if (sole && canReuseAsSection(sole, frame.width)) {
+      sole.name = band.name;
+      normalizePromotedSection(sole, band, frame.width);
+      sectionNodes.push(sole);
+      assignedCount += 1;
+      continue;
+    }
+
     const section = figma.createFrame();
     section.name = band.name;
     section.fills = [];
@@ -1053,6 +1212,17 @@ export async function applyAiSections(
 
     frame.appendChild(section);
     sectionNodes.push(section);
+
+    // Sole full-width group → flatten into section (avoid Section > Group > …).
+    if (
+      sole &&
+      sole.type === "GROUP" &&
+      isWideSectionShell(sole, frame.width) &&
+      sole.children.length > 0
+    ) {
+      assignedCount += flattenGroupIntoSection(sole, section);
+      continue;
+    }
 
     for (const child of band.members) {
       // Keep transform-local x/y (not AABB). AABB left ≠ node.x when rotated.
@@ -1071,6 +1241,18 @@ export async function applyAiSections(
   flowPageAsVerticalSections(frame, sectionNodes, unassigned);
 
   const renameStats = await applyRenamesAsync(result.renames);
+  // Band names win over layer renames on section roots (reuse would otherwise
+  // become "Message Section" again after promote).
+  for (let i = 0; i < sectionNodes.length; i++) {
+    try {
+      sectionNodes[i].name = filledBands[i].name;
+    } catch (e) {
+      logError(
+        `section rename re-assert failed (${safeNodeRef(sectionNodes[i])})`,
+        e,
+      );
+    }
+  }
   const elapsedMs = Date.now() - t0;
 
   return {

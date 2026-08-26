@@ -91,6 +91,20 @@ function siblingsSitInside(cover: ChildGeom, others: ChildGeom[]): boolean {
   );
 }
 
+/** Nested GROUP/FRAME of only decorative shapes is still a stacked icon piece. */
+function isDecorativeOrIconGroup(node: SceneNode): boolean {
+  if (isDecorativeLayer(node)) return true;
+  if (
+    (node.type === "GROUP" || node.type === "FRAME") &&
+    "children" in node &&
+    node.children.length > 0 &&
+    node.children.every((c) => isDecorativeLayer(c as SceneNode))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function parentHasFills(node: SceneNode): boolean {
   if (!("fills" in node)) return false;
   const fills = (node as MinimalFillsMixin).fills;
@@ -136,14 +150,44 @@ export function classifyChildren(
     const others = candidates.filter((c) => c !== cover);
     const stackedIcon =
       others.length > 0 &&
-      isDecorativeLayer(cover.node) &&
-      others.every((o) => isDecorativeLayer(o.node)) &&
+      isDecorativeOrIconGroup(cover.node) &&
+      others.every((o) => isDecorativeOrIconGroup(o.node)) &&
       siblingsSitInside(cover, others);
     if (!stackedIcon) bg = cover;
   }
 
   const rest = candidates.filter((c) => c !== bg);
   if (bg) backgrounds.push(bg);
+
+  // Marks/icons sitting on a folded background were never paired for overlay
+  // detection (bg left `rest`) — treat them as overlays so one-child VERTICAL
+  // Auto Layout does not stack them under the tile.
+  if (bg) {
+    for (const item of [...rest]) {
+      if (
+        rectArea(item.rect) < rectArea(bg.rect) * 0.4 &&
+        containsPoint(bg.rect, rectCenterX(item.rect), rectCenterY(item.rect))
+      ) {
+        overlays.push(item);
+        const idx = rest.indexOf(item);
+        if (idx >= 0) rest.splice(idx, 1);
+      }
+    }
+  }
+
+  // If bg was a stacked-icon base (decorative cover + icon-group siblings still
+  // in rest), put it back so the heavy-overlap path keeps the whole mark absolute.
+  if (
+    bg &&
+    isDecorativeOrIconGroup(bg.node) &&
+    rest.length > 0 &&
+    rest.every((o) => isDecorativeOrIconGroup(o.node)) &&
+    siblingsSitInside(bg, rest)
+  ) {
+    rest.unshift(bg);
+    backgrounds.pop();
+    bg = null;
+  }
 
   const flowSet = new Set(rest);
   const overlapPairs: Array<[ChildGeom, ChildGeom]> = [];

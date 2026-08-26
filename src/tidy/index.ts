@@ -13,6 +13,7 @@ import { getOpenRouterApiKey } from "./ai/key";
 import { callOpenRouterVision, OpenRouterHttpError } from "./ai/openrouter";
 import { captureRootScreenshot } from "./ai/screenshot";
 import { applyAiSections, ensurePageVerticalFlow } from "./ai/sections";
+import { repairOverlappingPageSections, repairTreeContainment } from "./repair";
 
 let tidying = false;
 
@@ -59,6 +60,23 @@ export async function tidySelection(): Promise<SceneNode | null> {
     if (root.type === "INSTANCE") {
       tidyWarn("Root is an instance — skipped Auto Layout inference");
     } else {
+      postBackendMessage({
+        type: "progress",
+        message: "Repairing containment…",
+        percent: 15,
+      });
+      try {
+        const repair = repairTreeContainment(root);
+        if (repair.unwrapped > 0 || repair.reparented > 0) {
+          tidyWarn(
+            `Containment repair: unwrapped ${repair.unwrapped}, reparented ${repair.reparented}`,
+          );
+        }
+      } catch (e) {
+        logError("Containment repair failed", e);
+        tidyWarn("Containment repair skipped due to error");
+      }
+
       postBackendMessage({
         type: "progress",
         message: "Capturing screenshot…",
@@ -118,6 +136,7 @@ export async function tidySelection(): Promise<SceneNode | null> {
 
       // Apply can roll back nested frames; re-assert page vertical flow last.
       if (root.type === "FRAME") {
+        repairOverlappingPageSections(root);
         ensurePageVerticalFlow(root as FrameNode);
       }
     }

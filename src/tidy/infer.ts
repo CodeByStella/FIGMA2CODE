@@ -432,11 +432,23 @@ function inferStructure(
 
   if (flow.length === 1) {
     const item = flow[0];
+    // A single decorative/icon child is almost always an absolute mark, not a
+    // one-item Auto Layout column (that was stacking icon marks under tiles).
+    if (
+      isDecorativeLayer(item.node) ||
+      item.node.type === "GROUP" ||
+      item.node.type === "TEXT" ||
+      item.node.type === "INSTANCE"
+    ) {
+      return {
+        layout: null,
+        wrappers: [],
+        childSizing: [],
+        fallbackAbsolute: [item],
+      };
+    }
     const metrics = inferPrimaryMetrics(flow, parentRect, "VERTICAL");
     const sizing = childSizingFor(item, metrics.contentBox, "VERTICAL");
-    const hints = constraintHints(item.node);
-    if (hints.preferCenterH || hints.preferCenterV) {
-    }
     return {
       layout: makeLayout("VERTICAL", metrics, "MIN"),
       wrappers: [],
