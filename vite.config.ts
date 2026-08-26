@@ -7,7 +7,13 @@ import react from "@vitejs/plugin-react-swc";
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoDist = path.resolve(repoRoot, "dist");
 
-const watchIgnored = ["**/dist/**", "**/node_modules/**", "**/.git/**"];
+const watchIgnored = [
+  "**/dist/**",
+  "**/node_modules/**",
+  "**/.git/**",
+  "**/.temp/**",
+  "**/docs/**",
+];
 
 export default defineConfig({
   root: "./src/ui",
