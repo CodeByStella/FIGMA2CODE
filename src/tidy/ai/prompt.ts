@@ -16,6 +16,9 @@ export function buildVisionSystemPrompt(): string {
     "Coordinates MUST use the same root-local Y axis as the inventory (not raw screenshot pixels).",
     "splitLinesY are horizontal cuts between major page sections, sorted ascending.",
     "sections MUST be contiguous: cover [0, rootHeight] with no gaps and no overlaps — each section's yEnd MUST equal the next section's yStart.",
+    "Do not cut through real section content: text, cards, and CTAs that straddle a cut belong in one section — move the split to the gap after that block.",
+    "Decorations, illustrations, and images that only sit on a section boundary stay in one section and may overflow; do not move the split for them.",
+    "When a section has a full-width solid background, that fill's bottom edge IS the section boundary — do not include the following whitespace or the next heading in that section.",
     "renames map layer id → short semantic name (English); only rename clearly labeled UI.",
     "Do not invent CSS or Auto Layout props.",
   ].join(" ");
