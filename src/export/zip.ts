@@ -7,6 +7,7 @@ import { ZipFileMessage } from "types";
 import { CachedAsset, clearAssetCache, setAssetCache } from "./cache";
 import { postBackendMessage } from "../messaging";
 import { EXPORT_TIMEOUT_MS, withTimeout } from "../convert/media/exportAsync";
+import { logError, safeNodeRef } from "../shared/log";
 
 const VECTOR_TYPES = new Set([
   "VECTOR",
@@ -319,6 +320,10 @@ async function trySettings(
       return { bytes, format: settings.format };
     } catch (err) {
       lastErr = err;
+      logError(
+        `exportAsync failed for ${target.type}:${target.id} ${settings.format}`,
+        err,
+      );
     }
   }
   await sleep(80);
@@ -332,6 +337,7 @@ async function trySettings(
     return { bytes, format: last.format };
   } catch (err) {
     lastErr = err;
+    logError(`exportAsync retry failed for ${target.type}:${target.id}`, err);
   }
   throw lastErr || new Error("exportAsync failed");
 }
@@ -501,8 +507,8 @@ async function exportNodeBytes(
   if (format === "PNG" && hasImageFill(node)) {
     try {
       return await exportImageNodePng(node);
-    } catch {
-      /** PNG image-fill export failed; try generic export path below */
+    } catch (e) {
+      logError(`PNG image-fill export failed (${safeNodeRef(node)})`, e);
     }
   }
 
@@ -515,7 +521,8 @@ async function exportNodeBytes(
       return await withUnclippedAncestors(node, () =>
         trySettings(node, svgAttempts as ExportSettings[]),
       );
-    } catch {
+    } catch (e) {
+      logError(`SVG export failed (${safeNodeRef(node)})`, e);
       return withUnclippedAncestors(node, () => trySettings(node, attempts));
     }
   }
@@ -592,7 +599,8 @@ async function serializeRoot(root: SceneNode): Promise<any> {
     const payload = rest as any;
     if (payload && payload.document) return payload.document;
     return payload;
-  } catch {
+  } catch (e) {
+    logError("REST JSON serialize failed", e);
     /** Minimal node stub when REST export is unavailable */
     return {
       id: root.id,
@@ -670,7 +678,8 @@ export async function exportZipAssets(
       assetsMap[node.id] = rel;
       postZipFile(rel, result.bytes);
       cache.set(node.id, pathOnlyAsset(node, actual, rel));
-    } catch {
+    } catch (e) {
+      logError(`asset export failed (${safeNodeRef(node)})`, e);
       failed += 1;
     }
     if (i % 5 === 0 || i === unique.length - 1) {

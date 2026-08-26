@@ -96,3 +96,20 @@ export type FullCodeMessage = Message & {
   code: string;
   purpose: "copy" | "display";
 };
+export type GetSelectionJsonMessage = Message & {
+  type: "get-selection-json";
+  purpose?: "copy" | "display";
+  /** panel: REST JSON for the preview pane; omit for About debug copy */
+  source?: "panel";
+  /** panel display: send the full JSON string instead of the 25-line preview */
+  full?: boolean;
+};
+export type SelectionJsonMessage = Message & {
+  type: "selection-json";
+  data?: unknown;
+  purpose?: "copy" | "display";
+  jsonPreview?: string;
+  jsonText?: string;
+  jsonLineCount?: number;
+  showingFull?: boolean;
+};

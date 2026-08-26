@@ -1,7 +1,6 @@
 /** Flat layer list sent to the vision model alongside the screenshot (root-local coords). */
 
 import { parentAbsRect } from "../geometry";
-import { aiLog } from "./log";
 
 export type LayerInventoryItem = {
   id: string;
@@ -12,8 +11,6 @@ export type LayerInventoryItem = {
   w: number;
   h: number;
 };
-
-const TABLE_CAP = 80;
 
 /**
  * Visible descendants with root-local bounding boxes for the vision prompt.
@@ -63,11 +60,6 @@ export function buildLayerInventory(root: SceneNode): LayerInventoryItem[] {
 
   visit(root);
   items.sort((a, b) => a.y - b.y || a.x - b.x);
-
-  aiLog("inventory", { count: items.length });
-  if (items.length > TABLE_CAP) {
-    aiLog(`inventory +${items.length - TABLE_CAP} more rows`);
-  }
 
   return items;
 }

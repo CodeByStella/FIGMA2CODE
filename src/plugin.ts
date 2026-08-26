@@ -8,6 +8,7 @@ import { run, exportZipPackage, getLastPreviewHtml } from "./convert/run";
 import { htmlMain, htmlCodeGenTextStyles } from "./convert/html/generate";
 import { nodesToJSON } from "./convert/nodes/toJson";
 import { postBackendMessage, postSettingsChanged } from "./messaging";
+import { logError } from "./shared/log";
 import { isTidying, tidySelection } from "./tidy";
 import { hasOpenRouterApiKey, setOpenRouterApiKey } from "./tidy/ai/key";
 import {
@@ -15,6 +16,7 @@ import {
   RequestFullCodeMessage,
   SetOpenRouterKeyMessage,
   SettingWillChangeMessage,
+  GetSelectionJsonMessage,
 } from "types";
 
 let userPluginSettings: PluginSettings;
@@ -105,6 +107,7 @@ const safeRun = async (settings: PluginSettings) => {
     }
     if (timedOut) return;
   } catch (e) {
+    logError("code generation failed", e);
     if (e && typeof e === "object" && "message" in e) {
       const error = e as Error;
       figma.ui.postMessage({ type: "error", error: error.message });
@@ -135,6 +138,7 @@ const safeExportZip = async (settings: PluginSettings) => {
     isBusy = true;
     await exportZipPackage(settings);
   } catch (e) {
+    logError("ZIP export failed", e);
     const errorMessage =
       e && typeof e === "object" && "message" in e
         ? String((e as Error).message)
@@ -163,6 +167,7 @@ const safeTidyAndConvert = async (settings: PluginSettings) => {
     pendingRun = false;
     await run(settings);
   } catch (e) {
+    logError("Tidy + Convert failed", e);
     const errorMessage =
       e && typeof e === "object" && "message" in e
         ? String((e as Error).message)
@@ -197,8 +202,8 @@ const exportSelectionJson = async (nodes: readonly SceneNode[]) => {
           ).document,
       ),
     )) as SceneNode[];
-  } catch {
-    /* REST export unavailable for some nodes */
+  } catch (e) {
+    logError("REST JSON export failed", e);
   }
 
   try {
@@ -213,17 +218,56 @@ const exportSelectionJson = async (nodes: readonly SceneNode[]) => {
     };
     newNodes.forEach(removeParent);
     result.newConversion = newNodes;
-  } catch {
-    /* Internal conversion failed; UI still receives REST JSON when present */
+  } catch (e) {
+    logError("internal conversion JSON failed", e);
   }
 
   return result;
 };
 
+const JSON_PREVIEW_LINES = 25;
+let lastFigmaJson: string | null = null;
+
+function clearLastFigmaJson() {
+  lastFigmaJson = null;
+}
+
+function snippetFromText(text: string) {
+  const lines = text.split("\n");
+  const lineCount = lines.length;
+  const preview =
+    lineCount <= JSON_PREVIEW_LINES
+      ? text
+      : `${lines.slice(0, JSON_PREVIEW_LINES).join("\n")}\n...`;
+  return { preview, lineCount };
+}
+
+function figmaJsonTextFromExport(data: {
+  json?: unknown;
+  newConversion?: unknown;
+  message?: string;
+}): string {
+  const payload = data.json ?? data.newConversion ?? data;
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch (e) {
+    logError("stringify Figma JSON failed", e);
+    return String(payload);
+  }
+}
+
+async function ensureLastFigmaJson(): Promise<string> {
+  if (lastFigmaJson) return lastFigmaJson;
+  const nodeJson = await exportSelectionJson(figma.currentPage.selection);
+  lastFigmaJson = figmaJsonTextFromExport(nodeJson);
+  return lastFigmaJson;
+}
+
 const DEBOUNCE_MS = 400;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const scheduleRun = () => {
+  clearLastFigmaJson();
   if (!userPluginSettings) return;
   if (isBusy || isTidying()) {
     pendingRun = true;
@@ -279,10 +323,34 @@ const standardMode = async () => {
       const req = msg as RequestFullCodeMessage;
       postFullCode(req.purpose === "display" ? "display" : "copy");
     } else if (msg.type === "get-selection-json") {
+      const req = msg as GetSelectionJsonMessage;
+      if (req.source === "panel") {
+        const text = await ensureLastFigmaJson();
+        if (req.purpose === "copy") {
+          figma.ui.postMessage({
+            type: "selection-json",
+            purpose: "copy",
+            jsonText: text,
+          });
+          return;
+        }
+        const { preview, lineCount } = snippetFromText(text);
+        const sendFull = Boolean(req.full) || lineCount <= JSON_PREVIEW_LINES;
+        figma.ui.postMessage({
+          type: "selection-json",
+          purpose: "display",
+          jsonPreview: sendFull ? undefined : preview,
+          jsonText: sendFull ? text : undefined,
+          jsonLineCount: lineCount,
+          showingFull: sendFull,
+        });
+        return;
+      }
       const nodeJson = await exportSelectionJson(figma.currentPage.selection);
       figma.ui.postMessage({
         type: "selection-json",
         data: nodeJson,
+        purpose: req.purpose === "display" ? "display" : "copy",
       });
     }
   };

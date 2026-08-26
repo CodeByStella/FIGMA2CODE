@@ -17,6 +17,7 @@ import { PluginSettings } from "types";
 import { Button, buttonVariants } from "../primitives/button";
 import { Card, CardContent } from "../primitives/card";
 import { cn } from "../lib/utils";
+import { logError } from "../../shared/log";
 
 type AboutProps = {
   useOldPluginVersion?: boolean;
@@ -41,13 +42,15 @@ const About = ({
   const copySelectionJson = async () => {
     try {
       parent.postMessage(
-        { pluginMessage: { type: "get-selection-json" } },
+        { pluginMessage: { type: "get-selection-json", purpose: "copy" } },
         "*",
       );
 
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {}
+    } catch (e) {
+      logError("copy selection JSON failed", e);
+    }
   };
 
   const togglePluginVersion = () => {

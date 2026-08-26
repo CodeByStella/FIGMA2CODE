@@ -1,5 +1,7 @@
 /** Absolute bounding-box snapshots used to validate and rollback tidy apply. */
 
+import { logError, safeNodeRef } from "../shared/log";
+
 export const PIXEL_EPS = 0.5;
 export const TIDY_WRAPPER_KEY = "tidyWrapper";
 
@@ -104,8 +106,8 @@ function restoreNodeAbs(node: SceneNode, target: AbsSnap): void {
     if ("layoutPositioning" in node) {
       (node as FrameNode).layoutPositioning = "AUTO";
     }
-  } catch {
-    // layoutPositioning is not writable on every node type.
+  } catch (e) {
+    logError(`layoutPositioning write failed (${safeNodeRef(node)})`, e);
   }
   (node as LayoutMixin).x = target.x - originX;
   (node as LayoutMixin).y = target.y - originY;
@@ -115,8 +117,8 @@ function restoreNodeAbs(node: SceneNode, target: AbsSnap): void {
         Math.max(1, target.w),
         Math.max(1, target.h),
       );
-    } catch {
-      // Some nodes cannot be resized programmatically.
+    } catch (e) {
+      logError(`resize failed (${safeNodeRef(node)})`, e);
     }
   }
 }
@@ -157,8 +159,8 @@ export function restoreFramePixelPerfect(
       }
       try {
         if (wrapper.parent) wrapper.remove();
-      } catch {
-        // Wrapper may already have been removed during promotion.
+      } catch (e) {
+        logError(`wrapper remove failed (${safeNodeRef(wrapper)})`, e);
       }
     }
 
@@ -167,8 +169,8 @@ export function restoreFramePixelPerfect(
     if (frameSnap && "resize" in frame) {
       try {
         frame.resize(Math.max(1, frameSnap.w), Math.max(1, frameSnap.h));
-      } catch {
-        // Frame resize may fail on locked or component-backed nodes.
+      } catch (e) {
+        logError(`frame resize failed (${safeNodeRef(frame)})`, e);
       }
     }
 

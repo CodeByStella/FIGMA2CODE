@@ -2,6 +2,7 @@
 
 import { PluginSettings } from "types";
 import { postBackendMessage, postError } from "../messaging";
+import { logError } from "../shared/log";
 import { applyTidyPlan } from "./apply";
 import { createTidyClone } from "./clone";
 import { buildTidyPlan } from "./infer";
@@ -9,9 +10,7 @@ import { resolveTidyTarget } from "./target";
 import { clearTidyWarnings, takeTidyWarnings, tidyWarn } from "./warnings";
 import { buildLayerInventory } from "./ai/inventory";
 import { getOpenRouterApiKey } from "./ai/key";
-import { aiError, aiLog, aiWarn, formatUsd } from "./ai/log";
 import { callOpenRouterVision, OpenRouterHttpError } from "./ai/openrouter";
-import { OPENROUTER_MODEL } from "./ai/prompt";
 import { captureRootScreenshot } from "./ai/screenshot";
 import { applyAiSections } from "./ai/sections";
 
@@ -30,11 +29,6 @@ export async function tidySelection(): Promise<SceneNode | null> {
 
   tidying = true;
   clearTidyWarnings();
-  const totalT0 = Date.now();
-  let screenshotMs = 0;
-  let openRouterMs = 0;
-  let sectionsMs = 0;
-  let inferApplyMs = 0;
   let root: SceneNode | null = null;
   let vision: Awaited<ReturnType<typeof callOpenRouterVision>> | null = null;
 
@@ -71,7 +65,6 @@ export async function tidySelection(): Promise<SceneNode | null> {
         percent: 20,
       });
       const shot = await captureRootScreenshot(root);
-      screenshotMs = shot.elapsedMs;
 
       const inventory = buildLayerInventory(root);
 
@@ -90,17 +83,16 @@ export async function tidySelection(): Promise<SceneNode | null> {
           rootHeight: rh,
           inventory,
         });
-        openRouterMs = vision.elapsedMs;
       } catch (e) {
         const msg =
           e && typeof e === "object" && "message" in e
             ? String((e as Error).message)
             : String(e || "OpenRouter failed");
         if (e instanceof OpenRouterHttpError) {
-          aiError("vision HTTP failed — aborting tidy", msg);
+          logError("vision HTTP failed — aborting tidy", e);
           throw e;
         }
-        aiWarn("vision parse/other failed — geometry-only tidy", msg);
+        logError("vision parse/other failed — geometry-only tidy", e);
         tidyWarn(`AI vision skipped: ${msg}`);
         vision = null;
       }
@@ -112,8 +104,7 @@ export async function tidySelection(): Promise<SceneNode | null> {
           percent: 55,
         });
         const imageHeightPx = rh * shot.scale;
-        const sec = await applyAiSections(root, vision, imageHeightPx);
-        sectionsMs = sec.elapsedMs;
+        await applyAiSections(root, vision, imageHeightPx);
       }
 
       postBackendMessage({
@@ -122,47 +113,20 @@ export async function tidySelection(): Promise<SceneNode | null> {
         percent: 65,
       });
 
-      const inferT0 = Date.now();
       const plan = buildTidyPlan(root);
       await applyTidyPlan(plan, root);
-      inferApplyMs = Date.now() - inferT0;
     }
 
     try {
       figma.commitUndo();
-    } catch {
-      // Undo registration is optional in some Figma host contexts.
+    } catch (e) {
+      logError("commitUndo failed", e);
     }
 
     figma.currentPage.selection = [root];
     figma.viewport.scrollAndZoomIntoView([root]);
 
     takeTidyWarnings();
-
-    const totalMs = Date.now() - totalT0;
-    aiLog("timing summary", {
-      screenshotMs,
-      openRouterMs,
-      sectionsMs,
-      inferApplyMs,
-      totalMs,
-    });
-    if (vision) {
-      aiLog("AI run cost summary", {
-        model: OPENROUTER_MODEL,
-        tokens: {
-          prompt: vision.usage.promptTokens,
-          completion: vision.usage.completionTokens,
-          total: vision.usage.totalTokens,
-        },
-        costUsd: {
-          input: formatUsd(vision.cost.inputUsd),
-          output: formatUsd(vision.cost.outputUsd),
-          total: formatUsd(vision.cost.totalUsd),
-        },
-        pricePer1MUsd: "$0.119 / $0.238",
-      });
-    }
 
     postBackendMessage({
       type: "progress",
@@ -176,14 +140,14 @@ export async function tidySelection(): Promise<SceneNode | null> {
       e && typeof e === "object" && "message" in e
         ? String((e as Error).message)
         : String(e || "Tidy failed");
-    aiError("tidy failed", message);
+    logError("tidy failed", e);
 
     // Drop the partial clone so the source selection is left untouched after a hard failure.
     if (root) {
       try {
         if (root.parent) root.remove();
-      } catch {
-        // Best-effort cleanup — clone removal can fail if the document changed.
+      } catch (cleanupErr) {
+        logError("failed to remove partial tidy clone", cleanupErr);
       }
     }
 

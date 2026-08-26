@@ -19,6 +19,7 @@ import React from "react";
 import { Button } from "./primitives/button";
 import { ScrollArea } from "./primitives/scroll-area";
 import { TooltipProvider } from "./primitives/tooltip";
+import type { PreviewMode } from "./components/CodePanel";
 
 type PluginUIProps = {
   code: string;
@@ -40,9 +41,15 @@ type PluginUIProps = {
   progressPercent?: number | null;
   onDownloadZip?: () => void;
   onTidyAndConvert?: () => void;
-  onCopyFullCode?: () => void;
-  onShowFullCode?: () => void;
   onSaveOpenRouterKey?: (key: string) => void;
+  previewMode: PreviewMode;
+  figmaJson: string;
+  jsonLineCount: number;
+  showingFullJson: boolean;
+  figmaJsonLoading: boolean;
+  onPreviewModeChange?: (mode: PreviewMode) => void;
+  onCopy?: () => void;
+  onShowMore?: () => void;
 };
 
 const LOADING_INDICATOR_DELAY_MS = 250;
@@ -233,8 +240,14 @@ export const PluginUI = (props: PluginUIProps) => {
                     code={props.code}
                     lineCount={props.lineCount}
                     showingFullCode={props.showingFullCode}
-                    onCopyFullCode={props.onCopyFullCode}
-                    onShowFullCode={props.onShowFullCode}
+                    previewMode={props.previewMode}
+                    figmaJson={props.figmaJson}
+                    jsonLineCount={props.jsonLineCount}
+                    showingFullJson={props.showingFullJson}
+                    figmaJsonLoading={props.figmaJsonLoading}
+                    onPreviewModeChange={props.onPreviewModeChange}
+                    onCopy={props.onCopy}
+                    onShowMore={props.onShowMore}
                   />
 
                   {props.colors.length > 0 && (

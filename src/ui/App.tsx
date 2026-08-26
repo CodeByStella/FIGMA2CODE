@@ -21,9 +21,12 @@ import {
   ZipErrorMessage,
   FullCodeMessage,
   OpenRouterKeyStatusMessage,
+  SelectionJsonMessage,
 } from "types";
 import { postUISettingsChangingMessage } from "./messaging";
 import copy from "copy-to-clipboard";
+import { logError } from "../shared/log";
+import type { PreviewMode } from "./components/CodePanel";
 
 interface AppState {
   codePreview: string;
@@ -41,6 +44,11 @@ interface AppState {
   warnings: Warning[];
   statusMessage: string;
   progressPercent: number | null;
+  previewMode: PreviewMode;
+  figmaJson: string;
+  jsonLineCount: number;
+  showingFullJson: boolean;
+  figmaJsonLoading: boolean;
 }
 
 const isDarkFigmaBackground = (background: string) => {
@@ -57,6 +65,7 @@ const isDarkFigmaBackground = (background: string) => {
 
 export default function App() {
   const zipFilesRef = useRef<Map<string, Uint8Array>>(new Map());
+  const previewModeRef = useRef<PreviewMode>("code");
   const [state, setState] = useState<AppState>({
     codePreview: "",
     lineCount: 0,
@@ -73,6 +82,11 @@ export default function App() {
     warnings: [],
     statusMessage: "Select a frame to generate code",
     progressPercent: null,
+    previewMode: "code",
+    figmaJson: "",
+    jsonLineCount: 0,
+    showingFullJson: false,
+    figmaJsonLoading: false,
   });
 
   const rootStyles = getComputedStyle(document.documentElement);
@@ -100,6 +114,10 @@ export default function App() {
             isLoading: true,
             isZipExporting: false,
             isTidying: false,
+            figmaJson: "",
+            jsonLineCount: 0,
+            showingFullJson: false,
+            figmaJsonLoading: previewModeRef.current === "json",
           }));
           break;
 
@@ -131,7 +149,23 @@ export default function App() {
             isLoading: false,
             isZipExporting: false,
             isTidying: false,
+            figmaJson: "",
+            jsonLineCount: 0,
+            showingFullJson: false,
+            figmaJsonLoading: previewModeRef.current === "json",
           }));
+          if (previewModeRef.current === "json") {
+            parent.postMessage(
+              {
+                pluginMessage: {
+                  type: "get-selection-json",
+                  purpose: "display",
+                  source: "panel",
+                },
+              },
+              "*",
+            );
+          }
           break;
         }
 
@@ -165,7 +199,8 @@ export default function App() {
           }));
           try {
             downloadZipFromFiles(done.folder, files);
-          } catch {
+          } catch (e) {
+            logError("ZIP browser download failed", e);
             setState((prevState) => ({
               ...prevState,
               statusMessage: "ZIP built but browser download failed",
@@ -226,6 +261,10 @@ export default function App() {
             isLoading: false,
             isZipExporting: false,
             isTidying: false,
+            figmaJson: "",
+            jsonLineCount: 0,
+            showingFullJson: false,
+            figmaJsonLoading: false,
           }));
           break;
 
@@ -246,6 +285,10 @@ export default function App() {
             isLoading: false,
             isZipExporting: false,
             isTidying: false,
+            figmaJson: "",
+            jsonLineCount: 0,
+            showingFullJson: false,
+            figmaJsonLoading: false,
           }));
           break;
 
@@ -259,9 +302,27 @@ export default function App() {
           }));
           break;
 
-        case "selection-json":
-          copy(JSON.stringify(event.data.pluginMessage.data, null, 2));
+        case "selection-json": {
+          const jsonMsg = untypedMessage as SelectionJsonMessage;
+          if (jsonMsg.purpose !== "display") {
+            const text =
+              typeof jsonMsg.jsonText === "string"
+                ? jsonMsg.jsonText
+                : JSON.stringify(jsonMsg.data, null, 2);
+            copy(text);
+            break;
+          }
+          setState((prevState) => ({
+            ...prevState,
+            figmaJson: jsonMsg.showingFull
+              ? (jsonMsg.jsonText ?? "")
+              : (jsonMsg.jsonPreview ?? jsonMsg.jsonText ?? ""),
+            jsonLineCount: jsonMsg.jsonLineCount ?? 0,
+            showingFullJson: Boolean(jsonMsg.showingFull),
+            figmaJsonLoading: false,
+          }));
           break;
+        }
 
         case "openRouterKeyStatus": {
           const status = untypedMessage as OpenRouterKeyStatusMessage;
@@ -333,6 +394,55 @@ export default function App() {
     );
   };
 
+  const requestPanelJson = (opts: {
+    purpose: "copy" | "display";
+    full?: boolean;
+  }) => {
+    parent.postMessage(
+      {
+        pluginMessage: {
+          type: "get-selection-json",
+          purpose: opts.purpose,
+          source: "panel",
+          full: opts.full,
+        },
+      },
+      "*",
+    );
+  };
+
+  const handlePreviewModeChange = (mode: PreviewMode) => {
+    previewModeRef.current = mode;
+    const needsFetch =
+      mode === "json" && !state.figmaJson && !state.figmaJsonLoading;
+    setState((prev) => ({
+      ...prev,
+      previewMode: mode,
+      figmaJsonLoading: needsFetch ? true : prev.figmaJsonLoading,
+    }));
+    if (needsFetch) {
+      requestPanelJson({ purpose: "display" });
+    }
+  };
+
+  const handleCopy = () => {
+    if (state.previewMode === "json") {
+      requestPanelJson({ purpose: "copy" });
+      return;
+    }
+    requestFullCode("copy");
+  };
+
+  const handleShowMore = () => {
+    if (state.previewMode === "json") {
+      if (state.showingFullJson) return;
+      setState((prev) => ({ ...prev, figmaJsonLoading: true }));
+      requestPanelJson({ purpose: "display", full: true });
+      return;
+    }
+    requestFullCode("display");
+  };
+
   const darkMode = isDarkFigmaBackground(figmaColorBgValue);
 
   return (
@@ -357,8 +467,14 @@ export default function App() {
         onDownloadZip={handleDownloadZip}
         onTidyAndConvert={handleTidyAndConvert}
         onSaveOpenRouterKey={handleSaveOpenRouterKey}
-        onCopyFullCode={() => requestFullCode("copy")}
-        onShowFullCode={() => requestFullCode("display")}
+        previewMode={state.previewMode}
+        figmaJson={state.figmaJson}
+        jsonLineCount={state.jsonLineCount}
+        showingFullJson={state.showingFullJson}
+        figmaJsonLoading={state.figmaJsonLoading}
+        onPreviewModeChange={handlePreviewModeChange}
+        onCopy={handleCopy}
+        onShowMore={handleShowMore}
       />
     </div>
   );

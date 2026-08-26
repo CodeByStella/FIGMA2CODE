@@ -1,7 +1,8 @@
 /** OpenRouter vision call from the plugin main thread (fetch + JSON parse + cost logging). */
 
+import { logError } from "../../shared/log";
 import type { LayerInventoryItem } from "./inventory";
-import { aiError, aiLog, aiLogBlock, aiWarn, formatUsd, maskKey } from "./log";
+import { aiLogCost } from "./log";
 import {
   MODEL_PRICE_INPUT_PER_1M_USD,
   MODEL_PRICE_OUTPUT_PER_1M_USD,
@@ -160,26 +161,6 @@ function estimateCost(
   };
 }
 
-function summarizeDataUrl(dataUrl: string): {
-  mime: string;
-  base64Chars: number;
-  preview: string;
-} {
-  const match = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl);
-  if (!match) {
-    return {
-      mime: "unknown",
-      base64Chars: dataUrl.length,
-      preview: `${dataUrl.slice(0, 48)}…`,
-    };
-  }
-  return {
-    mime: match[1],
-    base64Chars: match[2].length,
-    preview: `data:${match[1]};base64,${match[2].slice(0, 24)}…`,
-  };
-}
-
 export async function callOpenRouterVision(args: {
   apiKey: string;
   dataUrl: string;
@@ -188,8 +169,7 @@ export async function callOpenRouterVision(args: {
   rootHeight: number;
   inventory: LayerInventoryItem[];
 }): Promise<AiVisionResult> {
-  const { apiKey, dataUrl, imageBytes, rootWidth, rootHeight, inventory } =
-    args;
+  const { apiKey, dataUrl, rootWidth, rootHeight, inventory } = args;
 
   const system = buildVisionSystemPrompt();
   const userText = buildVisionUserPrompt({
@@ -197,27 +177,6 @@ export async function callOpenRouterVision(args: {
     rootHeight,
     inventory,
   });
-  const imageMeta = summarizeDataUrl(dataUrl);
-
-  aiLog("openrouter request meta", {
-    model: OPENROUTER_MODEL,
-    pricingPer1MUsd: {
-      input: MODEL_PRICE_INPUT_PER_1M_USD,
-      output: MODEL_PRICE_OUTPUT_PER_1M_USD,
-      note: "$0.119 / $0.238 per 1M tokens",
-    },
-    inventoryCount: inventory.length,
-    imageBytes,
-    image: imageMeta,
-    promptChars: {
-      system: system.length,
-      user: userText.length,
-      total: system.length + userText.length,
-    },
-    key: maskKey(apiKey),
-  });
-  aiLogBlock("openrouter input · system prompt", system);
-  aiLogBlock("openrouter input · user prompt", userText);
 
   const t0 = Date.now();
   let httpStatus = 0;
@@ -257,7 +216,7 @@ export async function callOpenRouterVision(args: {
 
     if (!res.ok) {
       const snippet = bodyText.slice(0, 500);
-      aiError("openrouter HTTP error", { httpStatus, snippet, elapsedMs });
+      logError("openrouter HTTP error", { httpStatus, snippet, elapsedMs });
       throw new OpenRouterHttpError(
         httpStatus,
         `OpenRouter ${httpStatus}: ${snippet || res.statusText}`,
@@ -267,10 +226,11 @@ export async function callOpenRouterVision(args: {
     let parsedOuter: any;
     try {
       parsedOuter = JSON.parse(bodyText);
-    } catch {
-      aiError("openrouter non-JSON envelope", {
+    } catch (e) {
+      logError("openrouter non-JSON envelope", {
         httpStatus,
         snippet: bodyText.slice(0, 500),
+        error: e,
       });
       throw new Error("OpenRouter returned non-JSON envelope");
     }
@@ -291,49 +251,32 @@ export async function callOpenRouterVision(args: {
               .join("")
           : JSON.stringify(content);
 
-    aiLog("openrouter usage & cost", {
+    aiLogCost({
       model: OPENROUTER_MODEL,
-      httpStatus,
-      elapsedMs,
       tokens: {
         prompt: usage.promptTokens,
         completion: usage.completionTokens,
         total: usage.totalTokens,
       },
-      pricePer1MUsd: {
-        input: MODEL_PRICE_INPUT_PER_1M_USD,
-        output: MODEL_PRICE_OUTPUT_PER_1M_USD,
-      },
       costUsd: {
-        input: formatUsd(cost.inputUsd),
-        output: formatUsd(cost.outputUsd),
-        total: formatUsd(cost.totalUsd),
-        inputRaw: cost.inputUsd,
-        outputRaw: cost.outputUsd,
-        totalRaw: cost.totalUsd,
+        input: cost.inputUsd,
+        output: cost.outputUsd,
+        total: cost.totalUsd,
       },
-      usageRaw: usage.raw,
     });
-    aiLogBlock("openrouter output · model content", contentStr);
 
     let normalized;
     try {
       const json = extractJsonObject(contentStr);
       normalized = normalizeResult(json);
     } catch (e) {
-      aiWarn("invalid model JSON — will skip AI sections", e);
+      logError("invalid model JSON — will skip AI sections", e);
       throw new OpenRouterParseError(
         e && typeof e === "object" && "message" in e
           ? String((e as Error).message)
           : "Model response is not valid JSON",
       );
     }
-
-    aiLogBlock("openrouter output · parsed JSON", {
-      splitLinesY: normalized.splitLinesY,
-      sections: normalized.sections,
-      renames: normalized.renames,
-    });
 
     return {
       ...normalized,
@@ -345,7 +288,7 @@ export async function callOpenRouterVision(args: {
     };
   } catch (e) {
     if (httpStatus && !String(e).includes("OpenRouter")) {
-      aiError("openrouter fetch failed", e);
+      logError("openrouter fetch failed", e);
     }
     throw e;
   }

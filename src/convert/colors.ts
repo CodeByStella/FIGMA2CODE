@@ -4,6 +4,7 @@ import { htmlColorFromFill, htmlGradientFromFills } from "./html/color";
 import { calculateContrastRatio } from "./contrast";
 import { LinearGradientConversion, SolidColorConversion } from "types";
 import { processColorVariables } from "./nodes/toJson";
+import { logError } from "../shared/log";
 
 export const retrieveGenericSolidUIColors = async (): Promise<
   Array<SolidColorConversion>
@@ -78,8 +79,8 @@ export const retrieveGenericLinearGradients = async (): Promise<
                   .replace(/\s+/g, "-")
                   .toLowerCase();
               }
-            } catch {
-              // Variable may have been deleted since the file was last saved.
+            } catch (e) {
+              logError("color variable lookup failed", e);
             }
           }
         }

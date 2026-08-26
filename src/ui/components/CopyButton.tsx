@@ -6,6 +6,7 @@ import { Copy, Check } from "lucide-react";
 import copy from "copy-to-clipboard";
 import { cn } from "../lib/utils";
 import { Button } from "../primitives/button";
+import { logError } from "../../shared/log";
 
 interface CopyButtonProps {
   value?: string;
@@ -42,7 +43,9 @@ export function CopyButton({
         copy(value);
       }
       setIsCopied(true);
-    } catch {}
+    } catch (e) {
+      logError("clipboard copy failed", e);
+    }
   }, [onCopy, value]);
 
   return (

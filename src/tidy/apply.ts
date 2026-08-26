@@ -15,9 +15,15 @@ import {
   snapTree,
 } from "./preserve";
 import { tidyWarn } from "./warnings";
+import { logError, safeNodeRef, isMissingNodeError } from "../shared/log";
 
 async function getNode(id: string): Promise<BaseNode | null> {
-  return figma.getNodeByIdAsync(id);
+  try {
+    return await figma.getNodeByIdAsync(id);
+  } catch (e) {
+    logError(`getNodeByIdAsync failed for ${id}`, e);
+    return null;
+  }
 }
 
 function applyAutoLayout(frame: BaseFrameMixin, layout: AutoLayoutSpec): void {
@@ -71,13 +77,22 @@ function pinFixedSize(node: SceneNode, w: number, h: number): void {
     n.layoutSizingHorizontal = "FIXED";
     n.layoutSizingVertical = "FIXED";
     n.layoutGrow = 0;
-    n.layoutAlign = "MIN";
+    n.layoutAlign = "INHERIT";
     if ("resize" in n) {
       (n as LayoutMixin).resize(Math.max(1, w), Math.max(1, h));
     }
-  } catch {
-    // Some node types reject layout sizing writes.
+  } catch (e) {
+    logError(`layout sizing write failed (${safeNodeRef(n)})`, e);
   }
+}
+
+function parentAllowsAbsolute(node: SceneNode): boolean {
+  const parent = node.parent;
+  return Boolean(
+    parent &&
+    "layoutMode" in parent &&
+    (parent as BaseFrameMixin).layoutMode !== "NONE",
+  );
 }
 
 function applyAbsoluteAt(
@@ -88,9 +103,13 @@ function applyAbsoluteAt(
   h?: number,
 ): void {
   try {
-    if ("layoutPositioning" in node) {
+    if ("layoutPositioning" in node && parentAllowsAbsolute(node)) {
       (node as FrameNode).layoutPositioning = "ABSOLUTE";
     }
+  } catch (e) {
+    logError(`layoutPositioning ABSOLUTE failed (${safeNodeRef(node)})`, e);
+  }
+  try {
     if ("x" in node) {
       (node as LayoutMixin).x = x;
       (node as LayoutMixin).y = y;
@@ -98,8 +117,8 @@ function applyAbsoluteAt(
     if (typeof w === "number" && typeof h === "number" && "resize" in node) {
       (node as LayoutMixin).resize(Math.max(1, w), Math.max(1, h));
     }
-  } catch {
-    // Absolute positioning is not supported on every node type.
+  } catch (e) {
+    logError(`absolute box write failed (${safeNodeRef(node)})`, e);
   }
 }
 
@@ -107,8 +126,9 @@ function safeRemove(node: BaseNode): void {
   try {
     if (!node.parent) return;
     node.remove();
-  } catch {
-    // Figma may have already removed the node (e.g. empty group cleanup).
+  } catch (e) {
+    if (isMissingNodeError(e)) return;
+    logError(`node remove failed (${safeNodeRef(node)})`, e);
   }
 }
 
@@ -150,8 +170,8 @@ function convertGroupToFrame(group: GroupNode): FrameNode {
       frame.appendChild(node);
       node.x = x;
       node.y = y;
-    } catch {
-      // Child may refuse reparenting during group→frame conversion.
+    } catch (e) {
+      logError(`group→frame reparent failed (${safeNodeRef(node)})`, e);
     }
   }
 
@@ -253,29 +273,6 @@ async function createWrapperFrame(
   return frame;
 }
 
-/**
- * Background layers stay absolute at their snapshot box — folding fills into the parent
- * drops strokes/radius and shifts paint, breaking pixel fidelity for convert.
- */
-async function pinBackgroundAbsolute(
-  bgId: string,
-  before: Map<string, AbsSnap>,
-  frame: FrameNode,
-): Promise<void> {
-  const bg = await getNode(bgId);
-  if (!bg || bg.type === "DOCUMENT" || bg.type === "PAGE") return;
-  const snap = before.get(bgId) ?? snapAbs(bg as SceneNode);
-  const frameAbs = frame.absoluteBoundingBox;
-  if (!snap || !frameAbs) return;
-  applyAbsoluteAt(
-    bg as SceneNode,
-    snap.x - frameAbs.x,
-    snap.y - frameAbs.y,
-    snap.w,
-    snap.h,
-  );
-}
-
 async function applyFrameSpec(
   spec: FrameTidySpec,
   before: Map<string, AbsSnap>,
@@ -292,42 +289,73 @@ async function applyFrameSpec(
   const preChildren = snapTree(frame);
 
   try {
-    // Pin backgrounds before wrappers/Auto Layout so decorative fills never enter the flow.
-    const bgId = spec.foldBackgroundId || spec.stretchBackgroundId;
-    if (bgId) {
-      await pinBackgroundAbsolute(bgId, before, frame);
-    }
-
     for (const wrapper of spec.wrappers) {
       await createWrapperFrame(frame, wrapper, before);
     }
 
-    // Overlays and rotated layers use pre-tidy absolute coords relative to the frame.
-    const frameAbsNow = frame.absoluteBoundingBox;
+    const bgId = spec.foldBackgroundId || spec.stretchBackgroundId;
+    let bg: SceneNode | null = null;
+    if (bgId) {
+      const n = await getNode(bgId);
+      if (n && n.type !== "DOCUMENT" && n.type !== "PAGE") {
+        bg = n as SceneNode;
+      }
+    }
+    const overlayNodes: {
+      node: SceneNode;
+      abs: (typeof spec.absoluteChildren)[number];
+    }[] = [];
     for (const abs of spec.absoluteChildren) {
       const child = await getNode(abs.nodeId);
       if (!child || child.type === "DOCUMENT" || child.type === "PAGE")
         continue;
-      const snap = before.get(abs.nodeId);
-      if (snap && frameAbsNow) {
-        applyAbsoluteAt(
-          child as SceneNode,
-          snap.x - frameAbsNow.x,
-          snap.y - frameAbsNow.y,
-          snap.w,
-          snap.h,
-        );
-      } else {
-        applyAbsoluteAt(child as SceneNode, abs.x, abs.y);
-      }
+      overlayNodes.push({ node: child as SceneNode, abs });
     }
+
+    const pinAbsoluteChildren = () => {
+      const frameAbsNow = frame.absoluteBoundingBox;
+      if (bg) {
+        const snap = before.get(bg.id) ?? snapAbs(bg);
+        if (snap && frameAbsNow) {
+          applyAbsoluteAt(
+            bg,
+            snap.x - frameAbsNow.x,
+            snap.y - frameAbsNow.y,
+            snap.w,
+            snap.h,
+          );
+        }
+      }
+      for (const { node: child, abs } of overlayNodes) {
+        const snap = before.get(abs.nodeId);
+        if (snap && frameAbsNow) {
+          applyAbsoluteAt(
+            child,
+            snap.x - frameAbsNow.x,
+            snap.y - frameAbsNow.y,
+            snap.w,
+            snap.h,
+          );
+        } else {
+          applyAbsoluteAt(child, abs.x, abs.y);
+        }
+      }
+    };
 
     if (spec.layout) {
       const w = frameSnap?.w ?? frame.width;
       const h = frameSnap?.h ?? frame.height;
+      const absoluteIds = new Set(
+        [
+          spec.foldBackgroundId,
+          spec.stretchBackgroundId,
+          ...spec.absoluteChildren.map((a) => a.nodeId),
+        ].filter((id): id is string => Boolean(id)),
+      );
 
       // Pin flow children to FIXED before enabling Auto Layout so reflow cannot resize them.
       for (const child of [...frame.children]) {
+        if (absoluteIds.has(child.id)) continue;
         if (
           "layoutPositioning" in child &&
           (child as FrameNode).layoutPositioning === "ABSOLUTE"
@@ -354,6 +382,9 @@ async function applyFrameSpec(
       frame.primaryAxisSizingMode = "FIXED";
       frame.counterAxisSizingMode = "FIXED";
 
+      // ABSOLUTE is only valid after the parent has Auto Layout.
+      pinAbsoluteChildren();
+
       // Auto Layout can still nudge text/hug nodes — re-pin from the snapshot.
       for (const child of [...frame.children]) {
         if (
@@ -376,6 +407,8 @@ async function applyFrameSpec(
         const snap = before.get(child.id) ?? preChildren.get(child.id);
         if (snap) pinFixedSize(child, snap.w, snap.h);
       }
+    } else {
+      pinAbsoluteChildren();
     }
 
     // Revert this frame if any descendant moved — convert must see identical pixels.

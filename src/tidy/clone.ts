@@ -4,6 +4,7 @@ import type { ResolvedTarget } from "./target";
 import { Rect, parentAbsRect, unionRect } from "./geometry";
 import { PLUGIN_DATA_CLONE, PLUGIN_DATA_SOURCE, TIDY_GAP } from "./types";
 import { tidyWarn } from "./warnings";
+import { logError } from "../shared/log";
 
 export type CloneResult = {
   root: SceneNode;
@@ -33,12 +34,19 @@ function absBox(node: SceneNode): Rect | null {
 async function removePreviousClone(source: SceneNode): Promise<void> {
   const cloneId = source.getPluginData(PLUGIN_DATA_CLONE);
   if (!cloneId) return;
-  const existing = await figma.getNodeByIdAsync(cloneId);
+  let existing: BaseNode | null = null;
+  try {
+    existing = await figma.getNodeByIdAsync(cloneId);
+  } catch (e) {
+    logError(`getNodeByIdAsync failed for previous clone ${cloneId}`, e);
+    source.setPluginData(PLUGIN_DATA_CLONE, "");
+    return;
+  }
   if (existing) {
     try {
       if (existing.parent) existing.remove();
-    } catch {
-      // Prior clone may already be missing from the document.
+    } catch (e) {
+      logError("failed to remove previous tidy clone", e);
     }
   }
   source.setPluginData(PLUGIN_DATA_CLONE, "");

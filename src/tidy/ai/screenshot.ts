@@ -1,7 +1,6 @@
 /** PNG export of the clone root for OpenRouter vision; long edge capped to control token cost. */
 
 import { bytesToDataUrl } from "../../export/cache";
-import { aiLog } from "./log";
 
 const MAX_LONG_EDGE = 2048;
 
@@ -39,14 +38,6 @@ export async function captureRootScreenshot(
 
   const dataUrl = bytesToDataUrl(bytes, "image/png");
   const elapsedMs = Date.now() - t0;
-
-  aiLog("screenshot", {
-    scale: Number(scale.toFixed(4)),
-    layoutSize: `${Math.round(w)}x${Math.round(h)}`,
-    bytes: bytes.byteLength,
-    dataUrlLength: dataUrl.length,
-    elapsedMs,
-  });
 
   return {
     bytes,

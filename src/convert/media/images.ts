@@ -3,6 +3,7 @@ import { btoa } from "js-base64";
 import { addWarning } from "../warnings";
 import { exportAsyncProxy } from "./exportAsync";
 import { bytesToDataUrl, getCachedAsset } from "../../export/cache";
+import { logError, safeNodeRef } from "../../shared/log";
 
 // Image fills: ZIP cache → base64 data URL, or live exportAsync fallback for preview.
 export const PLACEHOLDER_IMAGE_DOMAIN = "https://placehold.co";
@@ -58,7 +59,7 @@ const fillIsImage = ({ type }: Paint) => type === "IMAGE";
 export const getImageFills = (node: MinimalFillsMixin): ImagePaint[] => {
   try {
     return (node.fills as ImagePaint[]).filter(fillIsImage);
-  } catch (e) {
+  } catch {
     return [];
   }
 };
@@ -137,7 +138,8 @@ export const exportNodeAsBase64PNG = async <T extends ExportableNode>(
     node.base64 = base64;
     return base64;
   } catch (error) {
-    addWarning(`Failed exporting image for ${node.name || node.id}`);
+    logError(`Failed exporting image (${safeNodeRef(node)})`, error);
+    addWarning(`Failed exporting image for ${safeNodeRef(node)}`);
     return getPlaceholderImage(node.width, node.height);
   } finally {
     restoreChildren();

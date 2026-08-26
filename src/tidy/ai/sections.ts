@@ -2,7 +2,7 @@
 
 import type { AiVisionResult } from "./openrouter";
 import { listRootDirectChildren } from "./inventory";
-import { aiLog, aiWarn } from "./log";
+import { logError } from "../../shared/log";
 
 export type AppliedAiSectionsStats = {
   sectionCount: number;
@@ -169,12 +169,6 @@ export function maybeScaleAiCoords(
   // Values well above layout height indicate screenshot-space coordinates.
   if (maxY > rootHeight * 1.35 && imageHeightPx > 0) {
     const scale = rootHeight / imageHeightPx;
-    aiLog("coord scale", {
-      imageHeight: imageHeightPx,
-      rootHeight,
-      scale: Number(scale.toFixed(6)),
-      maxY,
-    });
     return {
       scale,
       result: {
@@ -219,7 +213,6 @@ export async function applyAiSections(
 ): Promise<AppliedAiSectionsStats> {
   const t0 = Date.now();
   if (!("children" in root) || !("width" in root)) {
-    aiWarn("root cannot hold sections", root.type);
     return {
       sectionCount: 0,
       assignedCount: 0,
@@ -241,7 +234,6 @@ export async function applyAiSections(
 
   const bands = buildBands(result.splitLinesY, result.sections, rootHeight);
   if (bands.length < 2) {
-    aiWarn("fewer than 2 sections — skip AI wrappers", { bands });
     const renameStats = await applyRenamesAsync(result.renames);
     return {
       sectionCount: 0,
@@ -289,21 +281,6 @@ export async function applyAiSections(
   let assignedCount = 0;
 
   const filledBands = collapseEmptyBands(bands, assignments);
-  aiLog("section bands (contiguous)", {
-    before: bands.map((b) => ({
-      name: b.name,
-      yStart: b.yStart,
-      yEnd: b.yEnd,
-      h: b.yEnd - b.yStart,
-    })),
-    after: filledBands.map((b) => ({
-      name: b.name,
-      yStart: b.yStart,
-      yEnd: b.yEnd,
-      h: b.yEnd - b.yStart,
-      count: b.members.length,
-    })),
-  });
 
   for (const band of filledBands) {
     const section = figma.createFrame();
@@ -318,7 +295,6 @@ export async function applyAiSections(
     // Append now; vertical Auto Layout in infer/apply will stack sections by Y.
     frame.appendChild(section);
 
-    const movedNames: string[] = [];
     for (const child of band.members) {
       const childAbs =
         "absoluteBoundingBox" in child ? child.absoluteBoundingBox : null;
@@ -340,37 +316,12 @@ export async function applyAiSections(
         (child as LayoutMixin).x = lx;
         (child as LayoutMixin).y = ly;
       }
-      movedNames.push(child.name);
       assignedCount += 1;
     }
-
-    aiLog("section assign", {
-      name: band.name,
-      range: [band.yStart, band.yEnd],
-      height: bandH,
-      count: band.members.length,
-      children: movedNames.slice(0, 20),
-    });
-  }
-
-  if (unassigned.length > 0) {
-    aiLog("unassigned / absolute leftovers", {
-      count: unassigned.length,
-      names: unassigned.map((n) => n.name).slice(0, 20),
-    });
   }
 
   const renameStats = await applyRenamesAsync(result.renames);
   const elapsedMs = Date.now() - t0;
-
-  aiLog("AI sections applied", {
-    sectionCount: filledBands.length,
-    assignedCount,
-    unassignedCount: unassigned.length,
-    ...renameStats,
-    scaleApplied: scale,
-    elapsedMs,
-  });
 
   return {
     sectionCount: filledBands.length,
@@ -387,29 +338,31 @@ export async function applyRenamesAsync(
 ): Promise<{ renameApplied: number; renameSkipped: number }> {
   let renameApplied = 0;
   let renameSkipped = 0;
-  const applied: string[] = [];
 
   for (const [id, name] of Object.entries(renames)) {
-    const node = await figma.getNodeByIdAsync(id);
-    if (!node || node.type === "DOCUMENT" || node.type === "PAGE") {
+    let node: BaseNode | null = null;
+    try {
+      node = await figma.getNodeByIdAsync(id);
+    } catch (e) {
+      logError(`getNodeByIdAsync failed for rename ${id}`, e);
+      renameSkipped += 1;
+      continue;
+    }
+    if (!node) {
       renameSkipped += 1;
       continue;
     }
     try {
-      const old = node.name;
+      if (node.type === "DOCUMENT" || node.type === "PAGE") {
+        renameSkipped += 1;
+        continue;
+      }
       node.name = name;
-      applied.push(`${old} → ${name}`);
       renameApplied += 1;
-    } catch {
+    } catch (e) {
+      logError(`rename failed for ${id}`, e);
       renameSkipped += 1;
     }
-  }
-
-  if (applied.length > 0) {
-    aiLog("renames applied", applied.slice(0, 40));
-  }
-  if (renameSkipped > 0) {
-    aiLog("renames skipped", renameSkipped);
   }
 
   return { renameApplied, renameSkipped };

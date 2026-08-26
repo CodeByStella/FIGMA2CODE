@@ -23,6 +23,7 @@ import { applyAssetFlagsToTree } from "../export/flags";
 import { buildZipIndexHtml } from "../export/html";
 import { lockedHtmlSettings } from "./settings";
 import { utf8Encode } from "../shared/utf8";
+import { logError } from "../shared/log";
 
 const PREVIEW_LINES = 25;
 
@@ -116,6 +117,7 @@ export const run = async (settings: PluginSettings) => {
       warnings: [...warnings],
     });
   } catch (err) {
+    logError("code generation failed", err);
     const message =
       err && typeof err === "object" && "message" in err
         ? String((err as Error).message)
@@ -198,6 +200,7 @@ export const exportZipPackage = async (settings: PluginSettings) => {
       failedCount: exported.failedCount,
     });
   } catch (err) {
+    logError("ZIP export failed", err);
     const message =
       err && typeof err === "object" && "message" in err
         ? String((err as Error).message)
